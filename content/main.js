@@ -279,11 +279,12 @@ var tblatex = {
         log += "LaTeX process returned " + exitValue + "\nProceeding anyway...\n";
       }
 
-      ["log", "aux"].forEach(function (ext) {
-          var file = init_file(temp_dir);
-          file.append(temp_file_noext+"."+ext);
-          if (deletetempfiles) file.remove(false);
+      if (deletetempfiles) {
+        ["log", "aux"].forEach(ext => {
+          let file = init_file(temp_dir);
+          file.append(temp_file_noext + "." + ext).remove(false);
         });
+      }
 
       var dvi_file = init_file(temp_dir);
       dvi_file.append(temp_file_noext+".dvi");
