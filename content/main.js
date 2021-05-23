@@ -649,9 +649,9 @@ var tblatex = {
       try {
         close_log();
         var write_log = open_log();
+        let elt = editor.selection.anchorNode.parentElement;
         if (autodpi) {
           // Font size at cursor position
-          var elt = editor.selection.anchorNode.parentElement;
           var font_px = window.getComputedStyle(elt).getPropertyValue('font-size');
         } else {
           var font_px = font_size+"px";
