@@ -107,10 +107,34 @@ var tblatex = {
       if (debug)
         log += ("\n*** Generating LaTeX expression:\n"+latex_expr+"\n");
 
-      if (g_image_cache[latex_expr+font_px+font_color]) {
-        if (debug)
-          log += "Found a cached image file "+g_image_cache[latex_expr+font_px+font_color].path+" (depth="+g_image_cache[latex_expr+font_px+font_color].depth+"), returning\n";
-        return [0, g_image_cache[latex_expr+font_px+font_color].path, g_image_cache[latex_expr+font_px+font_color].depth, log+"Image was already generated\n"];
+      var init_file = function(path) {
+        var f = Components.classes["@mozilla.org/file/local;1"].createInstance(Components.interfaces.nsIFile);
+        try {
+          f.initWithPath(path);
+          return f;
+        } catch (e) {
+          alert("Latex It! Error\n\nThis path is malformed:\n\t"+path+"\n\nSolution:\n\tSet the path properly in the add-on's options dialog (☰>Add-ons>Latex It!)");
+          log += "!!! This path is malformed: "+path+".\n"+
+            "Possible reasons include: you didn't setup the paths properly in the add-on's options.\n";
+          return {
+            exists: function () { return false; }
+          };
+        }
+      }
+
+      let imgKey = latex_expr + font_px + font_color;
+      if (g_image_cache[imgKey]) {
+        let imgPath = g_image_cache[imgKey].path;
+        if (init_file(imgPath).exists()) {
+          let depth = g_image_cache[imgKey].depth;
+          if (debug) {
+            log += "Found a cached image file " + imgPath +
+                " (depth=" + depth + "), returning\n";
+          }
+          return [0, imgPath, depth, log + "Image was already generated\n"];
+        } else {
+          delete g_image_cache[imgKey];
+        }
       }
 
       // Check if the LaTeX expression (that is, the whole file) contains the required packages.
@@ -128,21 +152,6 @@ var tblatex = {
         alert("Latex It! Error - Nothing added!\n\nThe package 'preview' cannot be found in the LaTeX file.\nThe inclusion of the LaTeX package 'preview' (with option 'active') is mandatory for the generated pictures to be aligned with the surrounding text!\n\nSolution:\n\tInsert a line with\n\t\t\\usepackage[active,displaymath,textmath]{preview}\n\tin the preamble of your LaTeX template or complex expression.");
         log += "!!! The package 'preview' cannot be found in the LaTeX file.\n";
         return [2, "", 0, log];
-      }
-
-      var init_file = function(path) {
-        var f = Components.classes["@mozilla.org/file/local;1"].createInstance(Components.interfaces.nsIFile);
-        try {
-          f.initWithPath(path);
-          return f;
-        } catch (e) {
-          alert("Latex It! Error\n\nThis path is malformed:\n\t"+path+"\n\nSolution:\n\tSet the path properly in the add-on's options dialog (☰>Add-ons>Latex It!)");
-          log += "!!! This path is malformed: "+path+".\n"+
-            "Possible reasons include: you didn't setup the paths properly in the add-on's options.\n";
-          return {
-            exists: function () { return false; }
-          };
-        }
       }
 
       var latex_bin = init_file(prefs.getCharPref("latex_path"));
@@ -387,7 +396,7 @@ var tblatex = {
       // Read the depth (distance between base of image and baseline) from the depth file
       if (!depth_file.exists()) {
         log += "dvipng did not output a depth file. Continuing without alignment.\n";
-        g_image_cache[latex_expr+font_px+font_color] = {path: png_file.path, depth: 0};
+        g_image_cache[imgKey] = {path: png_file.path, depth: 0};
         return [st, png_file.path, 0, log];
       }
 
@@ -424,7 +433,7 @@ var tblatex = {
       //  in case of error.
       if (deletetempfiles) temp_file.remove(false);
 
-      g_image_cache[latex_expr+font_px+font_color] = {path: png_file.path, depth: depth};
+      g_image_cache[imgKey] = {path: png_file.path, depth: depth};
       return [st, png_file.path, depth, log];
     } catch (e) {
       // alert("Latex It! Error\n\nSevere error. Missing package?\n\nSolution:\n\tWe left the .tex file there:\n\t\t"+temp_file.path+"\n\tTry to run 'latex' and 'dvipng --depth' on it by yourself...");
