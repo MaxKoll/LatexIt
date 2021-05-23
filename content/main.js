@@ -100,7 +100,7 @@ var tblatex = {
   function run_latex(latex_expr, font_px, font_color) {
     var log = "";
     var st = 0;
-    var temp_file;
+
     try {
       let deleteTempFiles = !prefs.getBoolPref("keeptempfiles");
       var debug = prefs.getBoolPref("debug");
@@ -245,26 +245,23 @@ var tblatex = {
         imgFile = initFile(temp_dir, temp_file_noext + ".png");
       } while (imgFile.exists());
 
-      temp_file = initFile(temp_dir, temp_file_noext + ".tex");
-      if (temp_file.exists()) temp_file.remove(false);
+      let texFile = initFile(temp_dir, temp_file_noext + ".tex");
+      if (texFile.exists()) texFile.remove(false);
 
-      // file is nsIFile, data is a string
       var foStream = Components.classes["@mozilla.org/network/file-output-stream;1"].
         createInstance(Components.interfaces.nsIFileOutputStream);
-
-      // use 0x02 | 0x10 to open file for appending.
-      foStream.init(temp_file, 0x02 | 0x08 | 0x20, 0666, 0);
-      // write, create, truncate
-      // In a c file operation, we have no need to set file mode with or operation,
-      // directly using "r" or "w" usually.
-
+      // 0x02 PR_WRONLY       Open for writing only.
+      // 0x08 PR_CREATE_FILE  If the file does not exist, it is created.
+      //                      If the file exists, this flag has no effect.
+      // 0x20 PR_TRUNCATE     If the file exists, its length is truncated to 0.
+      foStream.init(texFile, 0x02 | 0x08 | 0x20, 0666, 0);
       // if you are sure there will never ever be any non-ascii text in data you can
       // also call foStream.writeData directly
       var converter = Components.classes["@mozilla.org/intl/converter-output-stream;1"].
         createInstance(Components.interfaces.nsIConverterOutputStream);
       converter.init(foStream, "UTF-8", 0, 0);
       converter.writeString(latex_expr);
-      converter.close(); // this closes foStream
+      converter.close();
 
       let exitValue = runShellCmdInDir(temp_dir, [
         latex_bin.path,
@@ -286,7 +283,7 @@ var tblatex = {
 
       let dvi_file = initFile(temp_dir, temp_file_noext + ".dvi");
       if (!dvi_file.exists()) {
-        // alert("Latex It! Error\n\nLaTeX did not output a .dvi file.\n\nSolution:\n\tWe left the .tex file there:\n\t\t"+temp_file.path+"\n\tTry to run 'latex' on it by yourself...");
+        // alert("Latex It! Error\n\nLaTeX did not output a .dvi file.\n\nSolution:\n\tWe left the .tex file there:\n\t\t"+texFile.path+"\n\tTry to run 'latex' on it by yourself...");
         log += "!!! LaTeX did not output a .dvi file, something definitely went wrong. Aborting.\n";
         return [2, "", 0, log];
       }
@@ -425,18 +422,18 @@ var tblatex = {
       
       if (deleteTempFiles) depth_file.remove(false);
 
-      // Only delete the temporary file at this point, so that it's left on disk
-      //  in case of error.
-      if (deleteTempFiles) temp_file.remove(false);
+      // Only delete the LaTeX file at this point, so that it's left on disk
+      // in case of error.
+      if (deleteTempFiles) texFile.remove(false);
 
       g_image_cache[imgKey] = {path: png_file.path, depth: depth};
       return [st, png_file.path, depth, log];
     } catch (e) {
-      // alert("Latex It! Error\n\nSevere error. Missing package?\n\nSolution:\n\tWe left the .tex file there:\n\t\t"+temp_file.path+"\n\tTry to run 'latex' and 'dvipng --depth' on it by yourself...");
+      // alert("Latex It! Error\n\nSevere error. Missing package?\n\nSolution:\n\tWe left the .tex file there:\n\t\t"+texFile.path+"\n\tTry to run 'latex' and 'dvipng --depth' on it by yourself...");
       dump(e+"\n");
       dump(e.stack+"\n");
       log += "!!! Severe error. Missing package?\n";
-      log += "We left the .tex file there: "+temp_file.path+", try to run 'latex' and 'dvipng --depth' on it by yourself...\n";
+      log += "We left the .tex file there: "+texFile.path+", try to run 'latex' and 'dvipng --depth' on it by yourself...\n";
       return [2, "", 0, log];
     }
   }
