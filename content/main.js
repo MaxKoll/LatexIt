@@ -238,16 +238,17 @@ var tblatex = {
       var temp_dir = Components.classes["@mozilla.org/file/directory_service;1"].
         getService(Components.interfaces.nsIProperties).
         get("TmpD", Components.interfaces.nsIFile).path;
+
+      let temp_file_noext;
+      let imgFile;
+      do {
+        temp_file_noext = "tblatex-" + g_suffix++;
+        imgFile = init_file(temp_dir);
+        imgFile.append(temp_file_noext + ".png");
+      } while (imgFile.exists());
+
       temp_file = init_file(temp_dir);
-      temp_file.append("tblatex-"+g_suffix+".png");
-      while (temp_file.exists()) {
-        g_suffix++;
-        temp_file = init_file(temp_dir);
-        temp_file.append("tblatex-"+g_suffix+".png");
-      }
-      var temp_file_noext = "tblatex-"+g_suffix;
-      temp_file = init_file(temp_dir);
-      temp_file.append("tblatex-"+g_suffix+".tex");
+      temp_file.append(temp_file_noext + ".tex");
       if (temp_file.exists()) temp_file.remove(false);
 
       // file is nsIFile, data is a string
