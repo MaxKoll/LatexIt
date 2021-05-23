@@ -107,25 +107,24 @@ var tblatex = {
       if (debug)
         log += ("\n*** Generating LaTeX expression:\n"+latex_expr+"\n");
 
-      var init_file = function(path) {
-        var f = Components.classes["@mozilla.org/file/local;1"].createInstance(Components.interfaces.nsIFile);
+      const initFile = (path, pathAppend = "") => {
+        let file = Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsIFile);
         try {
-          f.initWithPath(path);
-          return f;
+          file.initWithPath(path);
+          file.append(pathAppend);
+          return file;
         } catch (e) {
           alert("Latex It! Error\n\nThis path is malformed:\n\t"+path+"\n\nSolution:\n\tSet the path properly in the add-on's options dialog (☰>Add-ons>Latex It!)");
           log += "!!! This path is malformed: "+path+".\n"+
             "Possible reasons include: you didn't setup the paths properly in the add-on's options.\n";
-          return {
-            exists: function () { return false; }
-          };
+          return {exists() { return false; }};
         }
-      }
+      };
 
       let imgKey = latex_expr + font_px + font_color;
       if (g_image_cache[imgKey]) {
         let imgPath = g_image_cache[imgKey].path;
-        if (init_file(imgPath).exists()) {
+        if (initFile(imgPath).exists()) {
           let depth = g_image_cache[imgKey].depth;
           if (debug) {
             log += "Found a cached image file " + imgPath +
@@ -154,13 +153,13 @@ var tblatex = {
         return [2, "", 0, log];
       }
 
-      var latex_bin = init_file(prefs.getCharPref("latex_path"));
+      let latex_bin = initFile(prefs.getCharPref("latex_path"));
       if (!latex_bin.exists()) {
         alert("Latex It! Error\n\nThe 'latex' executable cannot be found.\n\nSolution:\n\tSet the right path in the add-on's options dialog (☰>Add-ons>Latex It!)");
         log += "!!! Wrong path for 'latex' executable. Please set the right path in the options dialog first.\n";
         return [2, "", 0, log];
       }
-      var dvipng_bin = init_file(prefs.getCharPref("dvipng_path"));
+      let dvipng_bin = initFile(prefs.getCharPref("dvipng_path"));
       if (!dvipng_bin.exists()) {
         alert("Latex It! Error\n\nThe 'dvipng' executable cannot be found.\n\nSolution:\n\tSet the right path in the add-on's options dialog (☰>Add-ons>Latex It!)");
         log += "!!! Wrong path for 'dvipng' executable. Please set the right path in the options dialog first.\n";
@@ -210,12 +209,12 @@ var tblatex = {
         if (isWindows) {
           let env = Cc["@mozilla.org/process/environment;1"]
               .getService(Ci.nsIEnvironment);
-          shellBin = init_file(env.get("COMSPEC"));
+          shellBin = initFile(env.get("COMSPEC"));
           // /c "echo " \" && cd /d <dir> && <args> && echo \"
           shellArgs = ["/c", "echo ", "\"", "&&", "cd", "/d", dir, "&&",
               ...args, "&&", "echo", "\""];
         } else {
-          shellBin = init_file("/bin/sh");
+          shellBin = initFile("/bin/sh");
           let argsQ = args.map(addQuotesIfWhitespace).join(" ");
           // -c "cd <dir> && <args>"
           shellArgs = ["-c", "cd " + dirQ + " && " + argsQ];
@@ -243,12 +242,10 @@ var tblatex = {
       let imgFile;
       do {
         temp_file_noext = "tblatex-" + g_suffix++;
-        imgFile = init_file(temp_dir);
-        imgFile.append(temp_file_noext + ".png");
+        imgFile = initFile(temp_dir, temp_file_noext + ".png");
       } while (imgFile.exists());
 
-      temp_file = init_file(temp_dir);
-      temp_file.append(temp_file_noext + ".tex");
+      temp_file = initFile(temp_dir, temp_file_noext + ".tex");
       if (temp_file.exists()) temp_file.remove(false);
 
       // file is nsIFile, data is a string
@@ -282,23 +279,20 @@ var tblatex = {
 
       if (deleteTempFiles) {
         ["log", "aux"].forEach(ext => {
-          let file = init_file(temp_dir);
-          file.append(temp_file_noext + "." + ext).remove(false);
+          let file = initFile(temp_dir, temp_file_noext + "." + ext);
+          file.remove(false);
         });
       }
 
-      var dvi_file = init_file(temp_dir);
-      dvi_file.append(temp_file_noext+".dvi");
+      let dvi_file = initFile(temp_dir, temp_file_noext + ".dvi");
       if (!dvi_file.exists()) {
         // alert("Latex It! Error\n\nLaTeX did not output a .dvi file.\n\nSolution:\n\tWe left the .tex file there:\n\t\t"+temp_file.path+"\n\tTry to run 'latex' on it by yourself...");
         log += "!!! LaTeX did not output a .dvi file, something definitely went wrong. Aborting.\n";
         return [2, "", 0, log];
       }
 
-      var png_file = init_file(temp_dir);
-      png_file.append(temp_file_noext+".png");
-      var depth_file = init_file(temp_dir);
-      depth_file.append(temp_file_noext+"-depth.txt");
+      let png_file = initFile(temp_dir, temp_file_noext + ".png");
+      let depth_file = initFile(temp_dir, temp_file_noext + "-depth.txt");
 
       // Output resolution to fit font size (see 'man dvipng', option -D) for LaTeX default font height 10 pt
       //
