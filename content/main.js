@@ -45,45 +45,56 @@ var tblatex = {
     .getService(Components.interfaces.nsIPrefService)
     .getBranch("tblatex.");
 
-  function insertAfter(node1, node2) {
-    var parentNode = node2.parentNode;
-    if (node2.nextSibling)
-      parentNode.insertBefore(node1, node2.nextSibling);
-    else
-      parentNode.appendChild(node1);
-  }
 
-  /* splits #text [ some text $\LaTeX$ some text ] into three separates text
-   * nodes and returns the list of latex nodes */
-  function split_text_nodes(node) {
-    var latex_nodes = [];
-    if (node.nodeType == node.TEXT_NODE) {
-      var re = /\$\$[^\$]+\$\$|\$[^\$]+\$|\\\[.*?\\\]|\\\(.*?\\\)/g;
-      var matches = node.nodeValue.match(re);
-      if (matches) {
-        for (var i = matches.length - 1; i >= 0; --i) (function (i) {
-          var match = matches[i];
-          var j = node.nodeValue.lastIndexOf(match);
-          var k = j + match.length;
-          insertAfter(node.ownerDocument.createTextNode(node.nodeValue.substr(k, (node.nodeValue.length-k))), node);
-          var latex_node = node.ownerDocument.createTextNode(match);
-          latex_nodes.push(latex_node);
-          insertAfter(latex_node, node);
-          node.nodeValue = node.nodeValue.substr(0, j);
-        })(i);
-      }
-    } else if (node.childNodes && node.childNodes.length) {
-      for (var i = node.childNodes.length - 1; i >= 0; --i) {
-        if (i > 0 && node.childNodes[i-1].nodeType == node.childNodes[i-1].TEXT_NODE && node.childNodes[i].nodeValue) {
-          node.childNodes[i-1].nodeValue += node.childNodes[i].nodeValue;
-          node.childNodes[i].nodeValue = "";
-          continue;
+  /**
+   * Returns all LaTeX expressions found under rootNode as an array of text nodes.
+   * Text nodes that contain both non-LaTeX text and LaTeX expressions are being
+   * split up accordingly.
+   */
+  function prepareLatexNodes(rootNode) {
+
+    let regex = /\$\$[^\$]+\$\$|\$[^\$]+\$|\\\[.*?\\\]|\\\(.*?\\\)/g;
+
+    const splitNodeIfHasLatex = (node, latexNodes) => {
+      let latexExpressions = node.textContent.match(regex) || [];
+      latexExpressions.forEach(latex => {
+        let latexStrPos = node.textContent.indexOf(latex);
+        let latexNode = (latexStrPos > 0) ? node.splitText(latexStrPos) : node;
+        node = (latexNode.textContent.length > latex.length) ?
+            latexNode.splitText(latex.length) : latexNode;
+        latexNodes.push(latexNode);
+      });
+      return node;
+    };
+
+    const nextNodeInTree = (node, includeChildNodes = true) => {
+      if (includeChildNodes && node.hasChildNodes()) {
+        return node.firstChild;
+      } else {
+        while (!node.nextSibling && node != rootNode) {
+          node = node.parentNode;
         }
-        latex_nodes = latex_nodes.concat(split_text_nodes(node.childNodes[i]));
+        return node.nextSibling;
+      }
+    };
+
+    rootNode.normalize();
+    let latexNodes = [];
+    let node = rootNode.firstChild;
+
+    while (node) {
+      if (node.nodeType == Node.TEXT_NODE) {
+        node = splitNodeIfHasLatex(node, latexNodes);
+      }
+      node = nextNodeInTree(node);
+      if (node && node.id == "tblatex-log") {
+        node = nextNodeInTree(node, false);
       }
     }
-    return latex_nodes;
+
+    return latexNodes;
   }
+
 
   /* This *has* to be global. If image a.png is inserted, then modified, then
    * inserted again in the same mail, the OLD a.png is displayed because of some
@@ -580,8 +591,8 @@ var tblatex = {
     try {
       close_log();
       var body = editor_elt.contentDocument.getElementsByTagName("body")[0];
-      var latex_nodes = split_text_nodes(body);
-      replace_latex_nodes(latex_nodes, silent);
+      let latexNodes = prepareLatexNodes(body);
+      replace_latex_nodes(latexNodes, silent);
     } catch (e /*if false*/) { /*XXX do not catch errors to get full backtraces in dev cycles */
       Components.utils.reportError("TBLatex error: "+e);
       dump(e+"\n");
