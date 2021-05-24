@@ -101,11 +101,14 @@ var tblatex = {
   };
 
 
-  /* Returns [st, src, depth] where:
+  /* Returns [st, src, depth, height, width] where:
    * - st is 0 if everything went ok, 1 if some error was found but the image
    *   was nonetheless generated, 2 if there was a fatal error
    * - src is the local path of the image if generated
-   * - depth is the number of pixels from the bottom of the image to the baseline of the image
+   * - depth is the number of pixels from the bottom of the image to the
+   *   baseline of the image
+   * - height is the total height of the generated image in pixels
+   * - width is the total width of the generated image in pixels
    * */
   function run_latex(latex_expr, font_px, fontColor) {
 
@@ -143,10 +146,13 @@ var tblatex = {
       let imgPath = g_image_cache[imgKey].path;
       if (initFile(imgPath).exists()) {
         let depth = g_image_cache[imgKey].depth;
+        let height = g_image_cache[imgKey].height;
+        let width = g_image_cache[imgKey].width;
         let logEntry = writeLog("Image was already generated.");
         writeLogDebug("Image was already generated (depth=" + depth +
-            "):\n" + imgPath, {entry: logEntry, purpose: "replace"});
-        return [0, imgPath, depth];
+            ", height=" + height + ", width=" + width + "):\n" + imgPath,
+            {entry: logEntry, purpose: "replace"});
+        return [0, imgPath, depth, height, width];
       } else {
         delete g_image_cache[imgKey];
       }
@@ -177,7 +183,7 @@ var tblatex = {
           "Note: The preview package is needed for the alignment of the " +
           "generated images with the surrounding text.",
           {type: "critical"});
-      return [2, "", 0];
+      return [2, "", 0, 0, 0];
     }
 
     /* \u00a0 = non-breaking space. \u2011 = non-breaking hyphen. */
@@ -191,7 +197,7 @@ var tblatex = {
       writeLog("Cannot find the 'latex' executable. Please make sure " +
           "the correct path is set in the add-on's options dialog (" +
           logHintAddonOptions + ").", {type: "critical"});
-      return [2, "", 0];
+      return [2, "", 0, 0, 0];
     }
     let dvipng_bin = initFile(prefs.getCharPref("dvipng_path"));
     if (!dvipng_bin.exists()) {
@@ -201,35 +207,24 @@ var tblatex = {
       writeLog("The 'dvipng' executable cannot be found. Please make sure " +
           "the correct path is set in the add-on's options dialog (" +
           logHintAddonOptions + ").", {type: "critical"});
-      return [2, "", 0];
+      return [2, "", 0, 0, 0];
     }
-    // Since version 0.7.1 we support the alignment of the inserted pictures
-    // to the text baseline, which works as follows (see also
-    // https://github.com/protz/LatexIt/issues/36):
-    //   1. Have the LaTeX package preview available.
-    //   2. Insert \usepackage[active,textmath]{preview} into the preamble of
-    //      the LaTeX document.
-    //   3. Run dvipng with the option --depth.
-    //   4. Parse the output of the command for the depth value (a typical
-    //      output is:
-    //        This is dvipng 1.15 Copyright 2002-2015 Jan-Ake Larsson
-    //        [1 depth=4]
-    //   5. Return the depth value (in the above case 4) from
-    //      'main.js:run_latex()' in addition to the values already returned.
-    //   6. In 'content/main.js' replace all
-    //      'img.style = "vertical-align: middle"' with
-    //      'img.style = "vertical-align: -<depth>px"' (where <depth> is the
-    //      value returned by dvipng and needs a - sign in front of it).
-    // The problem lies in the step 4, because it looks like that it is not
-    // possible to capture the output of an external command in Thunderbird
-    // (https://stackoverflow.com/questions/10215643/how-to-execute-a-windows-command-from-firefox-addon#answer-10216452).
-    // However it is possible to redirect the standard output into a temporary
-    // file and parse that file: You need to call the command in an external
-    // shell (or LatexIt! must call a special script doing the redirection,
-    // which should also be avoided, because it requires installing this
-    // script file).
-    // Here we get the shell binary and the command line option to call an
-    // external program.
+    // Alignment of the inserted pictures to the text baseline works as follows
+    // (see also https://github.com/protz/LatexIt/issues/36):
+    // 1. Have the LaTeX package 'preview' available.
+    // 2. Into the preamble of the LaTeX document insert:
+    //      \usepackage[active,textmath]{preview}
+    // 3. Run a shell that
+    //    (a) calls dvipng with the options '--depth --height --width' and
+    //    (b) redirects the standard output into a temporary file.
+    //    This is necessary because it seems that it is impossible to get the
+    //    standard output directly (https://stackoverflow.com/a/10216452).
+    // 4. Parse the output of the command for the depth, height and width
+    //    values. A typical output is:
+    //      This is dvipng 1.15 Copyright 2002-2015 Jan-Ake Larsson
+    //      [1 depth=4 height=24 width=103]
+    // 5. Return these values in addition to the values already returned.
+    // 6. Translate inserted images by minus depth pixels vertically.
     //
     // On all platforms, nsIProcess will escape the arguments, that is:
     // - Escape backslashes (\) and double quotes (") with backslashes (\).
@@ -326,7 +321,7 @@ var tblatex = {
             "what went wrong:\n" + logFile.path;
       }
       writeLog(message, {type: "critical"});
-      return [2, "", 0];
+      return [2, "", 0, 0, 0];
     }
 
     if (logEntryLatexExitValue && logFile.exists()) {
@@ -336,7 +331,7 @@ var tblatex = {
     }
 
     let png_file = initFile(temp_dir, temp_file_noext + ".png");
-    let depth_file = initFile(temp_dir, temp_file_noext + "-depth.txt");
+    let dim_file = initFile(temp_dir, temp_file_noext + "-dim.txt");
 
     // Output resolution to fit font size (see 'man dvipng', option -D) for LaTeX default font height 10 pt
     //
@@ -402,13 +397,23 @@ var tblatex = {
       writeLogDebug("Using font size of " +
           font_size + "px as set in preferences.");
     }
-    var dpi = font_size * 72.27 / 10;
 
-    writeLogDebug("Calculated resolution: " + dpi + "dpi");
+    let dpiFactor = parseFloat(prefs.getCharPref("dpi_factor"));
+    if (isNaN(dpiFactor) || dpiFactor < 1 || dpiFactor > 8) {
+      writeLog("Image resolution factor set to invalid value, " +
+          "defaulting to 2.0", {type: warning});
+      dpiFactor = 2;
+    }
+    let dpiUnscaled = font_size * 72.27 / 10;
+    let dpi = dpiFactor * dpiUnscaled;
+    writeLogDebug("Calculated resolution: " + dpiFactor.toFixed(1) + "*" +
+        dpiUnscaled + "dpi = " + dpi + "dpi");
 
     exitValue = runShellCmdInDir(temp_dir, [
       dvipng_bin.path,
       "--depth",
+      "--height",
+      "--width",
       "-D", dpi.toString(),
       "-T", "tight",
       "-fg", "RGB " + fontColor.join(" "),
@@ -416,7 +421,7 @@ var tblatex = {
       "-z", "3",
       "-o", temp_file_noext + ".png",
       temp_file_noext + ".dvi",
-      ">", temp_file_noext + "-depth.txt"
+      ">", temp_file_noext + "-dim.txt"
     ]);
 
     if (deleteTempFiles) removeFile(dviFile);
@@ -424,38 +429,54 @@ var tblatex = {
     if (exitValue) {
       writeLog("dvipng failed with exit code " + exitValue +
           ". Aborting.", {type: "critical"});
-      return [2, "", 0];
+      return [2, "", 0, 0, 0];
     }
 
     let logEntryImgFile = writeLogDebug("Generated image:\n" + png_file.path);
 
-    // Read the depth (distance between base of image and baseline) from the depth file
-    if (!depth_file.exists()) {
-      writeLog("dvipng did not output a depth file. " +
-          "Continuing without alignment.");
-      g_image_cache[imgKey] = {path: png_file.path, depth: 0};
-      return [st, png_file.path, 0];
+    // Read the depth (distance between base of image and baseline),
+    // height and width from the dimensions file:
+    if (!dim_file.exists()) {
+      writeLog("dvipng did not output a dimensions file. " +
+-          "Continuing without alignment.");
+      g_image_cache[imgKey] =
+          {png: png_file.path, depth: 0, height: 0, width: 0};
+      return [st, png_file.path, 0, 0, 0];
     }
 
     // https://developer.mozilla.org/en-US/docs/Archive/Add-ons/Code_snippets/File_I_O#Line_by_line
     // Open an input stream from file
     var istream = Components.classes["@mozilla.org/network/file-input-stream;1"].
                   createInstance(Components.interfaces.nsIFileInputStream);
-    istream.init(depth_file, 0x01, 0444, 0);
+    istream.init(dim_file, 0x01, 0444, 0);
     istream.QueryInterface(Components.interfaces.nsILineInputStream);
 
-    // Read line by line and look for the depth information, which is contained in a line such as
-    //    [1 depth=4]
-    var re = /^\[[0-9] +depth=([0-9]+)\] *$/;
+    // Read line by line and look for the image dimensions,
+    // which are contained in a line of this general form:
+    //   [%d (%d) depth=%d height=%d width=%d] \n
+    // Here, %d denotes an integer. Not all space separated fields
+    // are necessarily present. This applies to all versions
+    // of dvipng since 2010 (see source, specifically "draw.c").
+    let regex = /depth=(\d+) height=(\d+) width=(\d+)/;
     var line = {}, hasmore;
     var depth = 0;
+    let height = 0;
+    let width = 0;
     do {
       hasmore = istream.readLine(line);
-      var linematch = line.value.match(re);
+      let linematch = line.value.match(regex);
       if (linematch) {
-        // Matching line found, get depth information and exit loop
-        depth = linematch[1];
-        writeLogDebug("Generated image (depth=" + depth + "):\n" +
+        let depthRaw = Number(linematch[1]);
+        let heightRaw = Number(linematch[1]) + Number(linematch[2]);
+        let widthRaw = Number(linematch[3]);
+        depth = depthRaw/dpiFactor;
+        height = heightRaw/dpiFactor;
+        width = widthRaw/dpiFactor;
+        let dpiStr = dpiFactor.toFixed(1);
+        writeLogDebug("Generated image (" +
+            "depth=" + depthRaw + "/" + dpiStr + "=" + depth + ", " +
+            "height=" + heightRaw + "/" + dpiStr + "=" + height + ", " +
+            "width=" + widthRaw + "/" + dpiStr + "=" + width + "):\n" +
             png_file.path, {entry: logEntryImgFile, purpose: "replace"});
         break;
       }
@@ -464,7 +485,7 @@ var tblatex = {
     // Close input stream
     istream.close();
 
-    if (deleteTempFiles) removeFile(depth_file);
+    if (deleteTempFiles) removeFile(dim_file);
 
     // Only delete the LaTeX file at this point, so that it's left on disk
     // in case of error.
@@ -476,8 +497,9 @@ var tblatex = {
       writeLog("Compilation finished and an image has been produced, " +
           "but there were errors.", {type: "warning"});
     }
-    g_image_cache[imgKey] = {path: png_file.path, depth: depth};
-    return [st, png_file.path, depth];
+    g_image_cache[imgKey] =
+        {path: png_file.path, depth: depth, height: height, width: width};
+    return [st, png_file.path, depth, height, width];
   }
 
 
@@ -814,7 +836,7 @@ var tblatex = {
     let fontSizePx = nodeStyle.fontSize;
     let fontColor = cssComputedColorToRgbArray(nodeStyle.color);
 
-    let [statusCode, imgFilePath, depth] =
+    let [statusCode, imgFilePath, depth, height, width] =
         run_latex(latexDocument, fontSizePx, fontColor);
 
     if (statusCode > 1) {
@@ -834,6 +856,12 @@ var tblatex = {
     imgNode.src = imgDataUrl;
     imgNode.alt = latexNode.nodeValue;
     imgNode.style.verticalAlign = -depth + "px";
+    if (height && width) {
+      imgNode.height = Math.round(height);
+      imgNode.width = Math.round(width);
+      imgNode.style.height = height + "px";
+      imgNode.style.width = width + "px";
+    }
     latexNode.replaceWith(imgNode);
 
     push_undo_func(() => imgNode.replaceWith(latexNode));
@@ -931,7 +959,7 @@ var tblatex = {
         let nodeStyle = window.getComputedStyle(elt);
         let fontSizePx = autodpi ? nodeStyle.fontSize : font_size + "px";
         let fontColor = cssComputedColorToRgbArray(nodeStyle.color);
-        let [st, url, depth] = run_latex(latex_expr, fontSizePx, fontColor);
+        let [st, url, depth, height, width] = run_latex(latex_expr, fontSizePx, fontColor);
 
         if (st == 0 || st == 1) {
 
@@ -951,8 +979,14 @@ var tblatex = {
 
             img.alt = latex_expr;
             img.title = latex_expr;
-            img.style = "vertical-align: -" + depth + "px";
             img.src = reader.result;
+            img.style.verticalAlign = -depth + "px";
+            if (height && width) {
+              img.height = Math.round(height);
+              img.width = Math.round(width);
+              img.style.height = height + "px";
+              img.style.width = width + "px";
+            }
 
             push_undo_func(() => img.remove());
             writeLogDebug(" done.",

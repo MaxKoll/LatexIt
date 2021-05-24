@@ -9,7 +9,19 @@
   xmlns:html="http://www.w3.org/1999/xhtml"
 >
   <script type="application/javascript" src="chrome://tblatex/content/options.js" />
- 
+
+   <popupset>
+    <tooltip id="dpi_factor_tooltip">
+      Higher image resolution factor leads to sharper images. Set this to the lowest value that still produces pleasing results. The default value is 2.0.
+      <separator class="thin" />
+      <separator class="thin" />
+      Please be aware that the file size of the inserted images – and therefore the file size of your email – will also increase with higher image resolutions.
+      <separator class="thin" />
+      <separator class="thin" />
+      As a reference, when set to 1.0, and if the display is not scaled, the image resolution matches the native screen resolution exactly. If the display is scaled, which is usually the case for high-resolution screens, the specified font size is smaller than the displayed font size (in relation to the native screen resolution), which leads to blurry images.
+    </tooltip>
+  </popupset>
+
   <groupbox>
     <label value="Executables:" style="header; font-weight: bold;" />
     <hbox align="baseline">
@@ -39,6 +51,14 @@
         <html:input preference="tblatex.font_px" id="fontpx_textbox"
           type="number" min="1" step="1" style="width: 6em" />
         <label control="fontpx_textbox" value="px" />
+      </hbox>
+      <hbox>
+        <hbox align="baseline" tooltip="dpi_factor_tooltip">
+          <label control="dpi_factor_textbox" value="Image resolution factor:" />
+          <html:input preference="tblatex.dpi_factor" id="dpi_factor_textbox"
+            type="number" min="1" max="8" step="0.5" style="width: 6em" />
+        </hbox>
+        <spacer flex="1" />
       </hbox>
     </groupbox>
     <groupbox>
