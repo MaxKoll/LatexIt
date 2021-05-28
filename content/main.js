@@ -102,7 +102,7 @@ var tblatex = {
     var st = 0;
     var temp_file;
     try {
-      var deletetempfiles = !prefs.getBoolPref("keeptempfiles");
+      let deleteTempFiles = !prefs.getBoolPref("keeptempfiles");
       var debug = prefs.getBoolPref("debug");
       if (debug)
         log += ("\n*** Generating LaTeX expression:\n"+latex_expr+"\n");
@@ -279,7 +279,7 @@ var tblatex = {
         log += "LaTeX process returned " + exitValue + "\nProceeding anyway...\n";
       }
 
-      if (deletetempfiles) {
+      if (deleteTempFiles) {
         ["log", "aux"].forEach(ext => {
           let file = init_file(temp_dir);
           file.append(temp_file_noext + "." + ext).remove(false);
@@ -381,7 +381,7 @@ var tblatex = {
         ">", temp_file_noext + "-depth.txt"
       ]);
 
-      if (deletetempfiles) dvi_file.remove(false);
+      if (deleteTempFiles) dvi_file.remove(false);
 
       if (exitValue) {
         // alert("Latex It! Error\n\nWhen converting the .dvi to a .png bitmap, 'dvipng' failed (Error code: "+exitValue+")\n\nSolution:\n\tWe left the .dvi file there:\n\t\t"+temp_file.path+"\n\tTry to run 'dvipng --depth' on it by yourself...");
@@ -428,11 +428,11 @@ var tblatex = {
       // Close input stream
       istream.close();
       
-      if (deletetempfiles) depth_file.remove(false);
+      if (deleteTempFiles) depth_file.remove(false);
 
       // Only delete the temporary file at this point, so that it's left on disk
       //  in case of error.
-      if (deletetempfiles) temp_file.remove(false);
+      if (deleteTempFiles) temp_file.remove(false);
 
       g_image_cache[imgKey] = {path: png_file.path, depth: depth};
       return [st, png_file.path, depth, log];
