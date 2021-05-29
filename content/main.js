@@ -125,7 +125,7 @@ var tblatex = {
           file.append(pathAppend);
           return file;
         } catch (e) {
-          alert("Latex It! Error\n\nThis path is malformed:\n\t"+path+"\n\nSolution:\n\tSet the path properly in the add-on's options dialog (☰>Add-ons>Latex It!)");
+          alert("This path is malformed:\n\t"+path+"\n\nSolution:\n\tSet the path properly in the add-on's options dialog (☰>Add-ons>Latex It!)");
           log += "!!! This path is malformed: "+path+".\n"+
             "Possible reasons include: you didn't setup the paths properly in the add-on's options.\n";
           return {exists() { return false; }};
@@ -159,20 +159,20 @@ var tblatex = {
       var re = /^[^%]*\\usepackage\[(.*,\s*)?active(,.*)?\]{(.*,\s*)?preview(,.*)?}/m;
       var package_match = latex_expr.match(re);
       if (!package_match) {
-        alert("Latex It! Error - Nothing added!\n\nThe package 'preview' cannot be found in the LaTeX file.\nThe inclusion of the LaTeX package 'preview' (with option 'active') is mandatory for the generated pictures to be aligned with the surrounding text!\n\nSolution:\n\tInsert a line with\n\t\t\\usepackage[active,displaymath,textmath]{preview}\n\tin the preamble of your LaTeX template or complex expression.");
+        alert("The package 'preview' cannot be found in the LaTeX file.\nThe inclusion of the LaTeX package 'preview' (with option 'active') is mandatory for the generated pictures to be aligned with the surrounding text!\n\nSolution:\n\tInsert a line with\n\t\t\\usepackage[active,displaymath,textmath]{preview}\n\tin the preamble of your LaTeX template or complex expression.");
         log += "!!! The package 'preview' cannot be found in the LaTeX file.\n";
         return [2, "", 0, log];
       }
 
       let latex_bin = initFile(prefs.getCharPref("latex_path"));
       if (!latex_bin.exists()) {
-        alert("Latex It! Error\n\nThe 'latex' executable cannot be found.\n\nSolution:\n\tSet the right path in the add-on's options dialog (☰>Add-ons>Latex It!)");
+        alert("The 'latex' executable cannot be found.\n\nSolution:\n\tSet the right path in the add-on's options dialog (☰>Add-ons>Latex It!)");
         log += "!!! Wrong path for 'latex' executable. Please set the right path in the options dialog first.\n";
         return [2, "", 0, log];
       }
       let dvipng_bin = initFile(prefs.getCharPref("dvipng_path"));
       if (!dvipng_bin.exists()) {
-        alert("Latex It! Error\n\nThe 'dvipng' executable cannot be found.\n\nSolution:\n\tSet the right path in the add-on's options dialog (☰>Add-ons>Latex It!)");
+        alert("The 'dvipng' executable cannot be found.\n\nSolution:\n\tSet the right path in the add-on's options dialog (☰>Add-ons>Latex It!)");
         log += "!!! Wrong path for 'dvipng' executable. Please set the right path in the options dialog first.\n";
         return [2, "", 0, log];
       }
@@ -294,7 +294,7 @@ var tblatex = {
 
       let dvi_file = initFile(temp_dir, temp_file_noext + ".dvi");
       if (!dvi_file.exists()) {
-        // alert("Latex It! Error\n\nLaTeX did not output a .dvi file.\n\nSolution:\n\tWe left the .tex file there:\n\t\t"+texFile.path+"\n\tTry to run 'latex' on it by yourself...");
+        // alert("LaTeX did not output a .dvi file.\n\nSolution:\n\tWe left the .tex file there:\n\t\t"+texFile.path+"\n\tTry to run 'latex' on it by yourself...");
         log += "!!! LaTeX did not output a .dvi file, something definitely went wrong. Aborting.\n";
         return [2, "", 0, log];
       }
@@ -387,7 +387,7 @@ var tblatex = {
       if (deleteTempFiles) dvi_file.remove(false);
 
       if (exitValue) {
-        // alert("Latex It! Error\n\nWhen converting the .dvi to a .png bitmap, 'dvipng' failed (Error code: "+exitValue+")\n\nSolution:\n\tWe left the .dvi file there:\n\t\t"+temp_file.path+"\n\tTry to run 'dvipng --depth' on it by yourself...");
+        // alert("When converting the .dvi to a .png bitmap, 'dvipng' failed (Error code: "+exitValue+")\n\nSolution:\n\tWe left the .dvi file there:\n\t\t"+temp_file.path+"\n\tTry to run 'dvipng --depth' on it by yourself...");
         log += "!!! dvipng failed with error code " + exitValue + ". Aborting.\n";
         return [2, "", 0, log];
       }
@@ -440,7 +440,7 @@ var tblatex = {
       g_image_cache[imgKey] = {path: png_file.path, depth: depth};
       return [st, png_file.path, depth, log];
     } catch (e) {
-      // alert("Latex It! Error\n\nSevere error. Missing package?\n\nSolution:\n\tWe left the .tex file there:\n\t\t"+texFile.path+"\n\tTry to run 'latex' and 'dvipng --depth' on it by yourself...");
+      // alert("Severe error. Missing package?\n\nSolution:\n\tWe left the .tex file there:\n\t\t"+texFile.path+"\n\tTry to run 'latex' and 'dvipng --depth' on it by yourself...");
       dump(e+"\n");
       dump(e.stack+"\n");
       log += "!!! Severe error. Missing package?\n";
@@ -448,6 +448,16 @@ var tblatex = {
       return [2, "", 0, log];
     }
   }
+
+
+  /**
+   * JavaScript's default alert() function does not allow setting a title.
+   * Replace it with one provided by Thunderbird.
+   */
+  function alert(message) {
+    Services.prompt.alert(window, "LaTeX It!", message);
+  }
+
 
   function open_log() {
     var want_log = prefs.getBoolPref("log");
@@ -582,7 +592,7 @@ var tblatex = {
     if (event.button == 2) return;
     var editor_elt = document.getElementById("content-frame");
     if (editor_elt.editortype != "htmlmail") {
-      alert("Latex It! Error\n\nCannot Latexify plain text emails.\n\nSolution:\n\tStart again by opening the message composer window in HTML mode, this can be achieved by holding the 'Shift' key while pressing the button.");
+      alert("Cannot Latexify plain text emails.\n\nSolution:\n\tStart again by opening the message composer window in HTML mode, this can be achieved by holding the 'Shift' key while pressing the button.");
       return;
     }
 
@@ -731,13 +741,27 @@ var tblatex = {
     var edocument = editor.contentDocument;
     var div = edocument.getElementById("tblatex-log");
     if (div) {
-      var retVals = {action: -1};
-      window.openDialog("chrome://tblatex/content/sendalert.xhtml", "", "chrome,modal,dialog,centerscreen", retVals);
-      switch (retVals.action) {
-        case 0:
+      let prompt = Services.prompt;
+      let buttonFlags = prompt.BUTTON_TITLE_IS_STRING *
+          (prompt.BUTTON_POS_0 + prompt.BUTTON_POS_1 + prompt.BUTTON_POS_2);
+      /* Buttons will be displayed in the order 0-2-1.
+         Pressing the prompt's close button also returns 1. */
+      let pressedButton = prompt.confirmEx(
+        window,
+        "LaTeX It!",
+        "There is a run report in your message.",
+        buttonFlags,
+        "Send",
+        "Cancel",
+        "Remove report and send",
+        null,
+        {}
+      );
+      switch (pressedButton) {
+        case 2:
           div.parentNode.removeChild(div);
           return true;
-        case 1:
+        case 0:
           return true;
         default:
           return false;
