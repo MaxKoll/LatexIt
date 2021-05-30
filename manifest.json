@@ -12,7 +12,13 @@
   "version": "0.7.4",
   "homepage_url": "https://github.com/protz/LatexIt/wiki",
   "icons": {
-      "32": "icon.png"
+    "16": "skin/icon.svg",
+    "24": "skin/icon.svg",
+    "32": "skin/icon.svg",
+    "48": "skin/icon.svg",
+    "64": "skin/icon.svg",
+    "96": "skin/icon.svg",
+    "128": "skin/icon.svg"
   },
   "background": {
     "scripts": [
