@@ -101,22 +101,18 @@ var tblatex = {
    * cache which I haven't found a way to invalidate yet. */
   var g_suffix = 1;
 
-  /* Returns [st, src, depth, log] where :
+  /* Returns [st, src, depth] where:
    * - st is 0 if everything went ok, 1 if some error was found but the image
    *   was nonetheless generated, 2 if there was a fatal error
    * - src is the local path of the image if generated
    * - depth is the number of pixels from the bottom of the image to the baseline of the image
-   * - log is the log messages generated during the run
    * */
   function run_latex(latex_expr, font_px, font_color) {
-    var log = "";
+
     var st = 0;
 
     try {
       let deleteTempFiles = !prefs.getBoolPref("keeptempfiles");
-      var debug = prefs.getBoolPref("debug");
-      if (debug)
-        log += ("\n*** Generating LaTeX expression:\n"+latex_expr+"\n");
 
       const initFile = (path, pathAppend = "") => {
         let file = Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsIFile);
@@ -125,9 +121,8 @@ var tblatex = {
           file.append(pathAppend);
           return file;
         } catch (e) {
-          alert("This path is malformed:\n\t"+path+"\n\nSolution:\n\tSet the path properly in the add-on's options dialog (☰>Add-ons>Latex It!)");
-          log += "!!! This path is malformed: "+path+".\n"+
-            "Possible reasons include: you didn't setup the paths properly in the add-on's options.\n";
+          writeLog("Failed initializing the following path:\n" + path,
+              {type: "critical"});
           return {exists() { return false; }};
         }
       };
@@ -137,11 +132,10 @@ var tblatex = {
         let imgPath = g_image_cache[imgKey].path;
         if (initFile(imgPath).exists()) {
           let depth = g_image_cache[imgKey].depth;
-          if (debug) {
-            log += "Found a cached image file " + imgPath +
-                " (depth=" + depth + "), returning\n";
-          }
-          return [0, imgPath, depth, log + "Image was already generated\n"];
+          let logEntry = writeLog("Image was already generated.");
+          writeLogDebug("Image was already generated (depth=" + depth +
+              "):\n" + imgPath, {entry: logEntry, purpose: "replace"});
+          return [0, imgPath, depth];
         } else {
           delete g_image_cache[imgKey];
         }
@@ -159,22 +153,44 @@ var tblatex = {
       var re = /^[^%]*\\usepackage\[(.*,\s*)?active(,.*)?\]{(.*,\s*)?preview(,.*)?}/m;
       var package_match = latex_expr.match(re);
       if (!package_match) {
-        alert("The package 'preview' cannot be found in the LaTeX file.\nThe inclusion of the LaTeX package 'preview' (with option 'active') is mandatory for the generated pictures to be aligned with the surrounding text!\n\nSolution:\n\tInsert a line with\n\t\t\\usepackage[active,displaymath,textmath]{preview}\n\tin the preamble of your LaTeX template or complex expression.");
-        log += "!!! The package 'preview' cannot be found in the LaTeX file.\n";
-        return [2, "", 0, log];
+        alert("The mandatory package 'preview' cannot be found in the " +
+            "LaTeX document.\n\nPlease add the following line in the " +
+            "preamble of your LaTeX template or complex expression:\n" +
+            "\\usepackage[active,displaymath,textmath]{preview}\n\n" +
+            "Note: The preview package is needed for the alignment of the " +
+            "generated images with the surrounding text.");
+        writeLog("The mandatory package 'preview' cannot be found in the " +
+            "LaTeX document.\nPlease add the following line in the " +
+            "preamble of your LaTeX template or complex expression:\n" +
+            "\\usepackage[active,displaymath,textmath]{preview}\n" +
+            "Note: The preview package is needed for the alignment of the " +
+            "generated images with the surrounding text.",
+            {type: "critical"});
+        return [2, "", 0];
       }
 
+      /* \u00a0 = non-breaking space. \u2011 = non-breaking hyphen. */
+      let logHintAddonOptions = "☰ ➜ Add-ons ➜ LaTeX It!"
+          .replace(/ /g, "\u00a0").replace(/-/, "\u2011");
       let latex_bin = initFile(prefs.getCharPref("latex_path"));
       if (!latex_bin.exists()) {
-        alert("The 'latex' executable cannot be found.\n\nSolution:\n\tSet the right path in the add-on's options dialog (☰>Add-ons>Latex It!)");
-        log += "!!! Wrong path for 'latex' executable. Please set the right path in the options dialog first.\n";
-        return [2, "", 0, log];
+        alert("Cannot find the 'latex' executable.\n\n" +
+            "Please make sure the correct path is set in the add-on's\n" +
+            "options dialog (☰ ➜ Add-ons ➜ LaTeX It!).");
+        writeLog("Cannot find the 'latex' executable. Please make sure " +
+            "the correct path is set in the add-on's options dialog (" +
+            logHintAddonOptions + ").", {type: "critical"});
+        return [2, "", 0];
       }
       let dvipng_bin = initFile(prefs.getCharPref("dvipng_path"));
       if (!dvipng_bin.exists()) {
-        alert("The 'dvipng' executable cannot be found.\n\nSolution:\n\tSet the right path in the add-on's options dialog (☰>Add-ons>Latex It!)");
-        log += "!!! Wrong path for 'dvipng' executable. Please set the right path in the options dialog first.\n";
-        return [2, "", 0, log];
+        alert("The 'dvipng' executable cannot be found.\n\n" +
+            "Please make sure the correct path is set in the add-on's\n" +
+            "options dialog (☰ ➜ Add-ons ➜ LaTeX It!).");
+        writeLog("The 'dvipng' executable cannot be found. Please make sure " +
+            "the correct path is set in the add-on's options dialog (" +
+            logHintAddonOptions + ").", {type: "critical"});
+        return [2, "", 0];
       }
       // Since version 0.7.1 we support the alignment of the inserted pictures
       // to the text baseline, which works as follows (see also
@@ -240,8 +256,8 @@ var tblatex = {
         let cmd = isWindows ?
             shellPathQ + " /c \"cd /d " + dirQ + " && " + argsQ + "\"" :
             shellPathQ + " -c 'cd " + dirQ + " && " + argsQ + "'";
-        log += "I ran (exit code " + shellProcess.exitValue + "):\n"
-            + cmd + "\n";
+        writeLogDebug(
+            "I ran (exit code " + shellProcess.exitValue + "):\n" + cmd);
         return shellProcess.exitValue;
       };
 
@@ -280,23 +296,36 @@ var tblatex = {
         temp_file_noext + ".tex"
       ]);
 
+      let logEntryLatexExitValue;
       if (exitValue) {
         st = 1;
-        log += "LaTeX process returned " + exitValue + "\nProceeding anyway...\n";
+        logEntryLatexExitValue = writeLog("LaTeX process returned " +
+            exitValue + ". Proceeding anyway.", {type: "warning"});
       }
+
+      let auxFile = initFile(temp_dir, temp_file_noext + ".aux");
+      let dviFile = initFile(temp_dir, temp_file_noext + ".dvi");
+      let logFile = initFile(temp_dir, temp_file_noext + ".log");
 
       if (deleteTempFiles) {
-        ["log", "aux"].forEach(ext => {
-          let file = initFile(temp_dir, temp_file_noext + "." + ext);
-          file.remove(false);
-        });
+        auxFile.remove(false);
+        logFile.remove(false);
       }
 
-      let dvi_file = initFile(temp_dir, temp_file_noext + ".dvi");
-      if (!dvi_file.exists()) {
-        // alert("LaTeX did not output a .dvi file.\n\nSolution:\n\tWe left the .tex file there:\n\t\t"+texFile.path+"\n\tTry to run 'latex' on it by yourself...");
-        log += "!!! LaTeX did not output a .dvi file, something definitely went wrong. Aborting.\n";
-        return [2, "", 0, log];
+      if (!dviFile.exists()) {
+        let message = "LaTeX did not output a .dvi file.";
+        if (logFile.exists()) {
+          message += "\nPlease examine its log to learn " +
+              "what went wrong:\n" + logFile.path;
+        }
+        writeLog(message, {type: "critical"});
+        return [2, "", 0];
+      }
+
+      if (logEntryLatexExitValue && logFile.exists()) {
+        writeLog("\nTo see what LaTeX is unhappy about, " +
+            "you can examine its log:\n" + logFile.path,
+            {entry: logEntryLatexExitValue, purpose: "append"});
       }
 
       let png_file = initFile(temp_dir, temp_file_noext + ".png");
@@ -356,20 +385,19 @@ var tblatex = {
       //      full alpha transparency, so in case of GIF output, both variants
       //      will use the latter behaviour.
       //
-      // We simply assume, that all modern mail viewers can handle a true alpha channel,
-      // hence we use "Transparent".
+      // We simply assume that all modern mail viewers can handle a true
+      // alpha channel, hence we use "Transparent".
       if (prefs.getBoolPref("autodpi") && font_px) {
         var font_size = parseFloat(font_px);
-        if (debug)
-          log += "*** Surrounding text has font size of "+font_px+"\n";
+        writeLogDebug("Font size of surrounding text: " + font_px);
       } else {
         var font_size = prefs.getIntPref("font_px");
-        if (debug)
-          log += "*** Using font size "+font_size+"px set in preferences\n";
+        writeLogDebug("Using font size of " +
+            font_size + "px as set in preferences.");
       }
       var dpi = font_size * 72.27 / 10;
-      if (debug)
-        log += "*** Calculated resolution is "+dpi+" dpi\n";
+
+      writeLogDebug("Calculated resolution: " + dpi + "dpi");
 
       exitValue = runShellCmdInDir(temp_dir, [
         dvipng_bin.path,
@@ -384,24 +412,23 @@ var tblatex = {
         ">", temp_file_noext + "-depth.txt"
       ]);
 
-      if (deleteTempFiles) dvi_file.remove(false);
+      if (deleteTempFiles) dviFile.remove(false);
 
       if (exitValue) {
-        // alert("When converting the .dvi to a .png bitmap, 'dvipng' failed (Error code: "+exitValue+")\n\nSolution:\n\tWe left the .dvi file there:\n\t\t"+temp_file.path+"\n\tTry to run 'dvipng --depth' on it by yourself...");
-        log += "!!! dvipng failed with error code " + exitValue + ". Aborting.\n";
-        return [2, "", 0, log];
+        writeLog("dvipng failed with exit code " + exitValue +
+            ". Aborting.", {type: "critical"});
+        return [2, "", 0];
       }
 
-      if (debug) {
-        log += ("*** Status is "+st+"\n");
-        log += ("*** Path is "+png_file.path+"\n");
-      }
+      let logEntryImgFile =
+          writeLogDebug("Generated image:\n" + png_file.path);
 
       // Read the depth (distance between base of image and baseline) from the depth file
       if (!depth_file.exists()) {
-        log += "dvipng did not output a depth file. Continuing without alignment.\n";
+        writeLog("dvipng did not output a depth file. " +
+            "Continuing without alignment.");
         g_image_cache[imgKey] = {path: png_file.path, depth: 0};
-        return [st, png_file.path, 0, log];
+        return [st, png_file.path, 0];
       }
 
       // https://developer.mozilla.org/en-US/docs/Archive/Add-ons/Code_snippets/File_I_O#Line_by_line
@@ -422,8 +449,8 @@ var tblatex = {
         if (linematch) {
           // Matching line found, get depth information and exit loop
           depth = linematch[1];
-          if (debug)
-            log += ("*** Depth is "+depth+"\n");
+          writeLogDebug("Generated image (depth=" + depth + "):\n" +
+              png_file.path, {entry: logEntryImgFile, purpose: "replace"});
           break;
         }
       } while(hasmore);
@@ -437,15 +464,24 @@ var tblatex = {
       // in case of error.
       if (deleteTempFiles) texFile.remove(false);
 
+      if (st == 0) {
+        writeLog("Compilation successful.");
+      } else if (st == 1) {
+        writeLog("Compilation finished and an image has been produced, " +
+            "but there were errors.", {type: "warning"});
+      }
       g_image_cache[imgKey] = {path: png_file.path, depth: depth};
-      return [st, png_file.path, depth, log];
+      return [st, png_file.path, depth];
     } catch (e) {
-      // alert("Severe error. Missing package?\n\nSolution:\n\tWe left the .tex file there:\n\t\t"+texFile.path+"\n\tTry to run 'latex' and 'dvipng --depth' on it by yourself...");
+      /* alert("Severe error. Missing package?\n\nSolution:\n" +
+          "\tWe left the .tex file there:\n\t\t" + texFile.path + "\n" +
+          "\tTry to run 'latex' and 'dvipng --depth' on it by yourself..."); */
       dump(e+"\n");
       dump(e.stack+"\n");
-      log += "!!! Severe error. Missing package?\n";
-      log += "We left the .tex file there: "+texFile.path+", try to run 'latex' and 'dvipng --depth' on it by yourself...\n";
-      return [2, "", 0, log];
+      /* writeLog("Severe error. Missing package?\nWe left the .tex file " +
+          "there: " + texFile.path + ", try to run 'latex' and 'dvipng " +
+          "--depth' on it by yourself..." : ""), {type: "critical"}); */
+      return [2, "", 0];
     }
   }
 
@@ -459,99 +495,313 @@ var tblatex = {
   }
 
 
-  function open_log() {
-    var want_log = prefs.getBoolPref("log");
-    if (!want_log)
-      return (function () {});
+  /**
+   * Writes a message to the log. Has to be unmuted first by calling
+   * openLog(). Will be muted when calling closeLog().
+   *
+   * Takes one or two arguments: A message string and optionally a list of
+   * options, i.e. an object literal which may have the following properties:
+   *
+   * - type: One of "default", "success", "failure", "warning", "critical".
+   * Modifies line prefix, leading/trailing blank lines and color.
+   *
+   * - prefix: Overwrites the default behavior of only debug messages
+   * having line prefixes. If ""/false/null, the line prefix will be removed.
+   * If true, the prefix will be shown. If string of 1 to 4 characters length,
+   * the String will be padded to 4 characters length and used as prefix.
+   *
+   * - color: Message color in CSS format. Unset by passing ""/false/null.
+   *
+   * - entry: The return value of a previous call to writeLog[Debug](),
+   * representing this earlier log entry. To be used in combination with
+   * option "purpose".
+   *
+   * - purpose: One of the following strings:
+   * "after": Message is inserted separately after entry. (default)
+   * "append": Message is appended to entry.
+   * "replace": Message replaces entry.
+   *
+   * Precedence: Option "type" will overwrite appearence of a previous
+   * log entry given by option "entry". Options "prefix" and "color" will
+   * overwrite settings implied by options "type" and "entry".
+   *
+   * Returns an object {node, message[, type, prefix, color]} containing
+   * the newly created or modified log entry node and the passed message
+   * and options.
+   */
+  let writeLog = (message, options) => {};
 
-    var editor = document.getElementById("content-frame");
-    var edocument = editor.contentDocument;
-    var body = edocument.getElementsByTagName("body")[0];
-    var div = edocument.createElement("div");
-    if (body.firstChild)
-      body.insertBefore(div, body.firstChild);
-    else
-      body.appendChild(div);
-    div.setAttribute("id", "tblatex-log");
-    div.setAttribute("style", "border: 1px solid #333; position: relative; width: 500px;"+
-        "-moz-border-radius: 5px; -moz-box-shadow: 2px 2px 6px #888; margin: 1em; padding: .5em;");
-    div.innerHTML = "<a href=\"#\" "+
-      "style=\"position: absolute; right: 4px; top: 4px; cursor: pointer !important;"+
-        "text-decoration: none !important; font-weight: bold; font-family: sans-serif;"+
-        "color: black !important;\">X</a>"+
-      "<span style=\"font-family: sans-serif; font-weight: bold; font-size: large\">"+
-      "LatexIt! run report...</span><br />";
-    var a = div.getElementsByTagName("a")[0];
-    a.addEventListener('click', {
-        handleEvent: function (event) {
-          a.parentNode.parentNode.removeChild(a.parentNode);
-          return false
+
+  /**
+   * Same as writeLog(), but will only write to
+   * the log if the debug option is set.
+   */
+  let writeLogDebug = (message, options) => {};
+
+
+  /**
+   * Initiates logging by creating and inserting the log into the message
+   * editor and unmuting the logging functions.
+   */
+  function openLog() {
+
+    closeLog();
+
+    if (!prefs.getBoolPref("log")) return;
+
+    let edocument = document.getElementById("content-frame").contentDocument;
+
+    let logNode = edocument.createElement("div");
+    logNode.id = "tblatex-log";
+    logNode.style = "position: relative; max-width: 650px; margin: 1em; " +
+        "padding: 0 0.5em 0.5em; border: 1px solid #333; border-radius: 5px;" +
+        "box-shadow: 2px 2px 6px #888; background: white; color: black";
+    // Note: Line break of zero height will show up when copy-pasting.
+    logNode.innerHTML = `
+        <div style="line-height: 40px; font-size: 18px;
+            font-family: sans-serif; font-weight: bold;
+            border-bottom: 1px solid #333">LaTeX It! run report:</div>
+        <br style="line-height: 0">
+        <div id="tblatex-log-closebutton" style="position: absolute;
+            width: 34px; height: 34px; right: 0; top: 0;
+            cursor: pointer; user-select: none">
+          <svg style="width: 12px; height: 12px; position: absolute;
+              top: 14px; right: 14px" fill="black" viewBox="0 0 96 96">
+            <path d="M 55,48 96,7 89,0 48,41 7,0 0,7 41,48 0,89 7,96 48,55
+                89,96 96,89 Z"/>
+          </svg>
+        </div>
+        <div id="tblatex-log-output" style="font-family: monospace;
+            max-height: 300px; overflow: auto;
+            margin: 0.5em 0 0; padding-right: 0.5em"></div>`;
+
+    let body = edocument.querySelector("body");
+    body.insertBefore(logNode, body.firstChild);
+
+    let closeButtonNode = logNode.querySelector("#tblatex-log-closebutton");
+    closeButtonNode.addEventListener("click", closeLog);
+
+    let outputNode = logNode.querySelector("#tblatex-log-output");
+    let prefDebug = prefs.getBoolPref("debug");
+
+    writeLog = (message, options = {}) => {
+
+      /* Apply options (1/3): Set default options. */
+      let entry = null;
+      let purpose = "after";
+      let appearence = {
+        type: null,
+        prefix: (prefDebug ? "*** " : ""),
+        color: ""
+      };
+
+      /* Apply options (2/3): Override default options with those from
+         the handle of a previous log entry, if submitted. */
+      if (options.entry &&
+          typeof options.entry.message == "string" &&
+          options.entry.node instanceof Element &&
+          options.entry.node.closest("#tblatex-log")) {
+        entry = options.entry.node;
+        if (["after", "append", "replace"].includes(options.purpose)) {
+          purpose = options.purpose;
         }
-      }, false);
-    var p = edocument.createElement("pre");
-    p.setAttribute("style", "max-height: 500px; overflow: auto;");
-    div.appendChild(p);
-    var f = function (text) { var n = edocument.createTextNode(text); p.appendChild(n); };
-    return f;
+        ["type", "prefix", "color"].forEach(property => {
+          if (options.entry.hasOwnProperty(property)) {
+            appearence[property] = options.entry[property];
+          }
+        });
+      }
+
+      /* Apply options (3/3): Override with options that are explicitly
+         set for the new log entry. */
+      if (["default", "success", "failure", "warning", "critical"]
+          .includes(options.type)) {
+        appearence.type = options.type;
+      }
+      let hasPrefix = (prefDebug || options.prefix === true) &&
+          !["", false, null].includes(options.prefix);
+      if (["default", "warning"].includes(appearence.type)) {
+        appearence.prefix = hasPrefix ? "*** " : "";
+      } else if (["success", "failure"].includes(appearence.type)) {
+        appearence.prefix = hasPrefix ? "--> " : "";
+      } else if (appearence.type == "critical") {
+        appearence.prefix = "!!! ";
+      }
+      if (appearence.type == "default") {
+        appearence.color = "";
+      } else if (appearence.type == "success") {
+        appearence.color = "#089e19";
+      } else if (appearence.type == "warning") {
+        appearence.color = "#c2a42b";
+      } else if (["failure", "critical"].includes(appearence.type)) {
+        appearence.color = "#f00000";
+      }
+      if (typeof options.prefix == "string" && options.prefix.length <= 4) {
+        appearence.prefix = options.prefix.padEnd(4);
+      }
+      if (options.color && typeof options.color == "string") {
+        appearence.color = options.color;
+      } else if (["", false, null].includes(options.color)) {
+        appearence.color = "";
+      }
+
+      /* Nested structure is necessary:
+         - All lines of the message but the first are indented. For this
+           to work, the message must not start with a blank line.
+         - Leading/trailing blank lines belong to this message and should be
+           affected when changing newEntry. Place them inside newEntry but
+           above/below the inner div which holds the message. */
+      let newEntry = edocument.createElement("div");
+      newEntry.classList.add("entry");
+      newEntry.innerHTML =
+          '<div style="margin: 0.2em 0; white-space: pre-wrap"></div>';
+      let messageNode = newEntry.querySelector("div");
+      if (appearence.color) {
+        messageNode.style.color = appearence.color
+      }
+      if (prefDebug) {
+        messageNode.style.textIndent = "-4ch"
+        messageNode.style.paddingLeft = "4ch";
+      }
+
+      if (!entry) {
+        outputNode.appendChild(newEntry);
+      } else if (purpose == "after") {
+        entry.after(newEntry);
+      } else if (purpose == "append") {
+        message = options.entry.message + message;
+        entry.replaceWith(newEntry);
+      } else if (purpose == "replace") {
+        entry.replaceWith(newEntry);
+      }
+
+      const createLineBreak = (className) => {
+        let lineBreak = edocument.createElement("br");
+        if (className) lineBreak.className = className;
+        lineBreak.style = "line-height: 0.8";
+        return lineBreak;
+      };
+
+      let lines = message.split(/\r?\n/g);
+
+      /* Certain message types call for additional blank lines. */
+      if (appearence.type == "critical") {
+        lines.unshift("");
+        lines.push("");
+      }
+
+      /* Place leading/trailing blank lines above/under message node. */
+      while (lines[0] == "") {
+        lines.shift();
+        if (newEntry == outputNode.firstElementChild) continue;
+        messageNode.before(createLineBreak("above"));
+      }
+      while (lines[lines.length - 1] == "") {
+        lines.pop();
+        messageNode.after(createLineBreak("below"));
+      }
+
+      /* Write message. */
+      if (lines[0]) lines[0] = appearence.prefix + lines[0];
+      lines.forEach(line => {
+        if (line) messageNode.appendChild(edocument.createTextNode(line));
+        messageNode.appendChild(createLineBreak());
+      });
+
+      /* Hide trailing blank lines of last entry. */
+      outputNode.querySelectorAll(".entry:not(:last-child) > br.below.hidden")
+          .forEach(brNode => {
+        brNode.style.display = "";
+        brNode.classList.remove("hidden");
+      })
+      outputNode.querySelectorAll(".entry:last-child > br.below")
+          .forEach(brNode => {
+        brNode.style.display = "none";
+        brNode.classList.add("hidden");
+      })
+
+      outputNode.lastElementChild.scrollIntoView(false);
+
+      let returnHandle = {message: message, node: newEntry};
+      ["type", "prefix", "color"].forEach(property => {
+        if (options.hasOwnProperty(property)) {
+          returnHandle[property] = options[property];
+        }
+      });
+      return returnHandle;
+    };
+
+    writeLogDebug = (...args) => {
+      if (!prefDebug) {
+        return null;
+      } else {
+        return writeLog(...args);
+      }
+    };
   }
 
-  function close_log() {
+
+  /**
+   * Removes the log from the message editor and mutes the logging functions.
+   */
+  function closeLog() {
+    writeLog = () => {};
+    writeLogDebug = () => {};
     var editor = document.getElementById("content-frame");
     var edocument = editor.contentDocument;
-    var div = edocument.getElementById("tblatex-log");
-    if (div)
-      div.parentNode.removeChild(div);
+    var logNode = edocument.getElementById("tblatex-log");
+    if (logNode) logNode.remove();
   }
+
 
   function replace_marker(string, replacement) {
     var marker = "__REPLACE_ME__";
     var oldmarker = "__REPLACEME__";
     var len = marker.length;
-    var log = "";
     var i = string.indexOf(marker);
     if (i < 0) {
       // Look for old marker
       i = string.indexOf(oldmarker);
       if (i < 0) {
-        log += "\n!!! Could not find the placeholder '" + marker + "' in your template.\n";
-        log += "This would be the place, where your LaTeX expression is inserted.\n";
-        log += "Please edit your template and add this placeholder.\n";
-        return [, log];
+        writeLog("Could not find the placeholder '" + marker + "' in " +
+            "your template.\nThis would be the place, where your LaTeX " +
+            "expression is inserted.\nPlease edit your template and add " +
+            "this placeholder.", {type: "critical"});
+        return null;
       } else {
         len = oldmarker.length;
       }
     }
     var p1 = string.substring(0, i);
     var p2 = string.substring(i+len);
-    return [p1 + replacement + p2, log];
+    return p1 + replacement + p2;
   }
 
   /* replaces each latex text node with the corresponding generated image */
-  function replace_latex_nodes(nodes, silent) {
-    var debug = prefs.getBoolPref("debug");
+  function replace_latex_nodes(nodes) {
     var template = prefs.getCharPref("template");
-    var write_log_func = null;
-    var write_log = function(str) { if (!write_log_func) write_log_func = open_log(); return write_log_func(str); };
     var editor = GetCurrentEditor();
-    if (!nodes.length && !silent)
-      write_log("No unconverted LaTeX $$ expression was found\n");
+
     for (var i = 0; i < nodes.length; ++i) (function (i) { /* Need a real scope here and there is no let-binding available in Thunderbird 2 */
       var elt = nodes[i];
-      if (!silent)
-        write_log("*** Found expression "+elt.nodeValue+"\n");
-      var [latex_expr, log] = replace_marker(template, elt.nodeValue);
-      if (log)
-        write_log(log);
+
+      writeLog("\nFound expression: " + elt.nodeValue);
+
+      var latex_expr = replace_marker(template, elt.nodeValue);
+
+      writeLogDebug("\nGenerated LaTeX document:\n" + latex_expr);
+
       // Font size in pixels
       var font_px = window.getComputedStyle(elt.parentElement, null).getPropertyValue('font-size');
       // Font color in "rgb(x,y,z)" => "RGB x y z"
       var font_color = window.getComputedStyle(elt.parentElement, null).getPropertyValue('color').replace(/([\(,\)])/g, " ").replace("rgb", "RGB");
-      var [st, url, depth, log] = run_latex(latex_expr, font_px, font_color);
-      if (st || !silent)
-        write_log(log);
+      var [st, url, depth] = run_latex(latex_expr, font_px, font_color);
+
       if (st == 0 || st == 1) {
-        if (debug)
-          write_log("--> Replacing node... ");
+
+        let logEntry = writeLogDebug(
+            "Replacing node...", {type: "success", color: false});
+
         var img = editor.createElementWithDefaults("img");
         var reader = new FileReader();
         var xhr = new XMLHttpRequest();
@@ -572,8 +822,9 @@ var tblatex = {
             img.parentNode.insertBefore(elt, img);
             img.parentNode.removeChild(img);
           });
-          if (debug)
-            write_log("done\n");
+
+          writeLogDebug(" done.",
+              {entry: logEntry, purpose: "append", type: "success"});
         }, false);
 
         xhr.open('GET',"file://"+url);
@@ -581,8 +832,7 @@ var tblatex = {
         xhr.overrideMimeType("image/png");
         xhr.send();
       } else {
-        if (debug)
-          write_log("--> Failed, not inserting\n");
+        writeLogDebug("Failed, not inserting.", {type: "failure"});
       }
     })(i);
   }
@@ -592,17 +842,23 @@ var tblatex = {
     if (event.button == 2) return;
     var editor_elt = document.getElementById("content-frame");
     if (editor_elt.editortype != "htmlmail") {
-      alert("Cannot Latexify plain text emails.\n\nSolution:\n\tStart again by opening the message composer window in HTML mode, this can be achieved by holding the 'Shift' key while pressing the button.");
+      alert("Cannot compile LaTeX in plain text emails.\n\nTo open the " +
+          "message compose window in HTML mode, hold down\nthe 'Shift' " +
+          "key while pressing the 'Write'/'Reply'/... button.\n\nThe " +
+          "default compose mode can be changed in the account settings.");
       return;
     }
-
     var editor = GetCurrentEditor();
     editor.beginTransaction();
     try {
-      close_log();
+      silent ? closeLog() : openLog();
       var body = editor_elt.contentDocument.getElementsByTagName("body")[0];
       let latexNodes = prepareLatexNodes(body);
-      replace_latex_nodes(latexNodes, silent);
+      if (!latexNodes.length) {
+        writeLog("No unconverted LaTeX expression found.");
+      } else {
+        replace_latex_nodes(latexNodes);
+      }
     } catch (e /*if false*/) { /*XXX do not catch errors to get full backtraces in dev cycles */
       Components.utils.reportError("TBLatex error: "+e);
       dump(e+"\n");
@@ -666,12 +922,11 @@ var tblatex = {
   tblatex.on_insert_complex = function (event) {
     var editor = GetCurrentEditor();
     var f = function (latex_expr, autodpi, font_size) {
-      var debug = prefs.getBoolPref("debug");
       g_complex_input = latex_expr;
       editor.beginTransaction();
       try {
-        close_log();
-        var write_log = open_log();
+        openLog();
+        writeLogDebug("Entered LaTeX document:\n" + latex_expr);
         let elt = editor.selection.anchorNode.parentElement;
         if (autodpi) {
           // Font size at cursor position
@@ -681,12 +936,13 @@ var tblatex = {
         }
         // Font color in "rgb(x,y,z)" => "RGB x y z"
         var font_color = window.getComputedStyle(elt).getPropertyValue('color').replace(/([\(,\)])/g, " ").replace("rgb", "RGB");
-        var [st, url, depth, log] = run_latex(latex_expr, font_px, font_color);
-        log = log || "Everything went OK.\n";
-        write_log(log);
+        var [st, url, depth] = run_latex(latex_expr, font_px, font_color);
+
         if (st == 0 || st == 1) {
-          if (debug)
-            write_log("--> Inserting at cursor position... ");
+
+          let logEntry = writeLogDebug("Inserting at cursor position...",
+              {type: "success", color: false});
+
           var img = editor.createElementWithDefaults("img");
           var reader = new FileReader();
           var xhr = new XMLHttpRequest();
@@ -706,8 +962,8 @@ var tblatex = {
             push_undo_func(function () {
               img.parentNode.removeChild(img);
             });
-            if (debug)
-              write_log("done\n");
+            writeLogDebug(" done.",
+                {entry: logEntry, purpose: "append", type: "success"});
           }, false);
 
           xhr.open('GET',"file://"+url);
@@ -715,8 +971,7 @@ var tblatex = {
           xhr.overrideMimeType("image/png");
           xhr.send();
         } else {
-          if (debug)
-            write_log("--> Failed, not inserting\n");
+            writeLogDebug("Failed, not inserting.", {type: "failure"});
         }
       } catch (e) {
         Components.utils.reportError("TBLatex Error (while inserting) "+e);
@@ -736,38 +991,40 @@ var tblatex = {
   };
 
   function check_log_report () {
-    // code from close_log();
+
     var editor = document.getElementById("content-frame");
     var edocument = editor.contentDocument;
-    var div = edocument.getElementById("tblatex-log");
-    if (div) {
-      let prompt = Services.prompt;
-      let buttonFlags = prompt.BUTTON_TITLE_IS_STRING *
-          (prompt.BUTTON_POS_0 + prompt.BUTTON_POS_1 + prompt.BUTTON_POS_2);
-      /* Buttons will be displayed in the order 0-2-1.
-         Pressing the prompt's close button also returns 1. */
-      let pressedButton = prompt.confirmEx(
-        window,
-        "LaTeX It!",
-        "There is a run report in your message.",
-        buttonFlags,
-        "Send",
-        "Cancel",
-        "Remove report and send",
-        null,
-        {}
-      );
-      switch (pressedButton) {
-        case 2:
-          div.parentNode.removeChild(div);
-          return true;
-        case 0:
-          return true;
-        default:
-          return false;
-      }
-    } else {
-      return true;
+    let logNode = edocument.getElementById("tblatex-log");
+
+    if (!logNode) return true;
+
+    let prompt = Services.prompt;
+    let buttonFlags = prompt.BUTTON_TITLE_IS_STRING *
+        (prompt.BUTTON_POS_0 + prompt.BUTTON_POS_1 + prompt.BUTTON_POS_2);
+    /* Buttons will be displayed in the order 0-2-1.
+       Pressing the prompt's close button also returns 1. */
+    let pressedButton = prompt.confirmEx(
+      window,
+      "LaTeX It!",
+      "There is a run report in your message.",
+      buttonFlags,
+      "Send",
+      "Cancel",
+      "Remove report and send",
+      null,
+      {}
+    );
+    switch (pressedButton) {
+      case 0:
+        let logCloseButtonNode =
+            logNode.querySelector("#tblatex-log-closebutton");
+        if (logCloseButtonNode) logCloseButtonNode.remove();
+        return true;
+      case 2:
+        logNode.remove();
+        return true;
+      default:
+        return false;
     }
   }
 
