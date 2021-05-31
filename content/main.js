@@ -22,14 +22,6 @@ var tblatex = {
       return new Promise(function(resolve, reject) {
           window.setTimeout(resolve, delay);
       });
-  }  
-
-  function dumpCallStack(e) {
-    let frame = e ? e.stack : Components.stack;
-    while (frame) {
-      dump("\n"+frame);
-      frame = frame.caller;
-    }
   }
 
   function push_undo_func(f) {
@@ -96,10 +88,18 @@ var tblatex = {
   }
 
 
-  /* This *has* to be global. If image a.png is inserted, then modified, then
-   * inserted again in the same mail, the OLD a.png is displayed because of some
-   * cache which I haven't found a way to invalidate yet. */
-  var g_suffix = 1;
+  /**
+   * Returns a random alphanumeric string of given length.
+   */
+  const randomStringBase36 = (length) => {
+    let alphabet = "0123456789abcdefghijklmnopqrstuvwxyz";
+    let randomChars = [];
+    while (randomChars.length < length) {
+      randomChars.push(alphabet[Math.floor(36 * Math.random())]);
+    }
+    return randomChars.join("");
+  };
+
 
   /* Returns [st, src, depth] where:
    * - st is 0 if everything went ok, 1 if some error was found but the image
@@ -111,7 +111,6 @@ var tblatex = {
 
     var st = 0;
 
-    try {
       let deleteTempFiles = !prefs.getBoolPref("keeptempfiles");
 
       const initFile = (path, pathAppend = "") => {
@@ -121,11 +120,24 @@ var tblatex = {
           file.append(pathAppend);
           return file;
         } catch (e) {
-          writeLog("Failed initializing the following path:\n" + path,
-              {type: "critical"});
+          let message = "Error while trying to initialize " +
+              "the following path:\n" + file.path;
+          Components.utils.reportError("LaTeX It! -- " + message + "\n" + e);
+          writeLog(message, {type: "critical"});
           return {exists() { return false; }};
         }
       };
+      
+      const removeFile = (file) => {
+        try {
+          file.remove(false);
+        } catch (e) {
+          let message = "Error while trying to remove " +
+              "this temporary file:\n" + file.path;
+          Components.utils.reportError("LaTeX It! -- " + message + "\n" + e);
+          writeLogDebug(message, {type: "warning"});
+        }
+      }
 
       let imgKey = latex_expr + font_px + font_color;
       if (g_image_cache[imgKey]) {
@@ -265,15 +277,11 @@ var tblatex = {
         getService(Components.interfaces.nsIProperties).
         get("TmpD", Components.interfaces.nsIFile).path;
 
-      let temp_file_noext;
-      let imgFile;
-      do {
-        temp_file_noext = "tblatex-" + g_suffix++;
-        imgFile = initFile(temp_dir, temp_file_noext + ".png");
-      } while (imgFile.exists());
+      // Random base36 string of length 24 has ~124 bits of entropy.
+      // UUIDs usually have 121 to 123 bits of entropy.
+      let temp_file_noext = "tblatex-" + randomStringBase36(24);
 
       let texFile = initFile(temp_dir, temp_file_noext + ".tex");
-      if (texFile.exists()) texFile.remove(false);
 
       var foStream = Components.classes["@mozilla.org/network/file-output-stream;1"].
         createInstance(Components.interfaces.nsIFileOutputStream);
@@ -308,8 +316,8 @@ var tblatex = {
       let logFile = initFile(temp_dir, temp_file_noext + ".log");
 
       if (deleteTempFiles) {
-        auxFile.remove(false);
-        logFile.remove(false);
+        removeFile(auxFile);
+        removeFile(logFile);
       }
 
       if (!dviFile.exists()) {
@@ -412,7 +420,7 @@ var tblatex = {
         ">", temp_file_noext + "-depth.txt"
       ]);
 
-      if (deleteTempFiles) dviFile.remove(false);
+      if (deleteTempFiles) removeFile(dviFile);
 
       if (exitValue) {
         writeLog("dvipng failed with exit code " + exitValue +
@@ -458,11 +466,11 @@ var tblatex = {
       // Close input stream
       istream.close();
       
-      if (deleteTempFiles) depth_file.remove(false);
+      if (deleteTempFiles) removeFile(depth_file);
 
       // Only delete the LaTeX file at this point, so that it's left on disk
       // in case of error.
-      if (deleteTempFiles) texFile.remove(false);
+      if (deleteTempFiles) removeFile(texFile);
 
       if (st == 0) {
         writeLog("Compilation successful.");
@@ -472,17 +480,6 @@ var tblatex = {
       }
       g_image_cache[imgKey] = {path: png_file.path, depth: depth};
       return [st, png_file.path, depth];
-    } catch (e) {
-      /* alert("Severe error. Missing package?\n\nSolution:\n" +
-          "\tWe left the .tex file there:\n\t\t" + texFile.path + "\n" +
-          "\tTry to run 'latex' and 'dvipng --depth' on it by yourself..."); */
-      dump(e+"\n");
-      dump(e.stack+"\n");
-      /* writeLog("Severe error. Missing package?\nWe left the .tex file " +
-          "there: " + texFile.path + ", try to run 'latex' and 'dvipng " +
-          "--depth' on it by yourself..." : ""), {type: "critical"}); */
-      return [2, "", 0];
-    }
   }
 
 
@@ -818,10 +815,7 @@ var tblatex = {
           img.style = "vertical-align: -" + depth + "px";
           img.src = reader.result;
 
-          push_undo_func(function () {
-            img.parentNode.insertBefore(elt, img);
-            img.parentNode.removeChild(img);
-          });
+          push_undo_func(() => img.replaceWith(elt));
 
           writeLogDebug(" done.",
               {entry: logEntry, purpose: "append", type: "success"});
@@ -859,10 +853,11 @@ var tblatex = {
       } else {
         replace_latex_nodes(latexNodes);
       }
-    } catch (e /*if false*/) { /*XXX do not catch errors to get full backtraces in dev cycles */
-      Components.utils.reportError("TBLatex error: "+e);
-      dump(e+"\n");
-      dumpCallStack(e);
+    } catch (e) {
+      let message =
+          "Unexpected error while trying to replace LaTeX expressions:\n";
+      Components.utils.reportError("LaTeX It! -- " + message + e);
+      writeLog(message + e.message + "\n" + e.stack, {type: "critical"});
     }
     editor.endTransaction();
   };
@@ -887,15 +882,9 @@ var tblatex = {
   };
 
   function undo() {
-    var editor = GetCurrentEditor();
+    let editor = GetCurrentEditor();
     editor.beginTransaction();
-    try {
-      if (g_undo_func)
-        g_undo_func();
-    } catch (e) {
-      Components.utils.reportError("TBLatex Error (while undoing) "+e);
-      dumpCallStack(e);
-    }
+    if (g_undo_func) g_undo_func();
     editor.endTransaction();
   }
 
@@ -905,14 +894,10 @@ var tblatex = {
   };
 
   function undo_all() {
-    var editor = GetCurrentEditor();
+    let editor = GetCurrentEditor();
     editor.beginTransaction();
-    try {
-      while (g_undo_func)
-        g_undo_func();
-    } catch (e) {
-      Components.utils.reportError("TBLatex Error (while undoing) "+e);
-      dumpCallStack(e);
+    while (g_undo_func) {
+      g_undo_func();
     }
     editor.endTransaction();
   };
@@ -959,9 +944,7 @@ var tblatex = {
             img.style = "vertical-align: -" + depth + "px";
             img.src = reader.result;
 
-            push_undo_func(function () {
-              img.parentNode.removeChild(img);
-            });
+            push_undo_func(() => img.remove());
             writeLogDebug(" done.",
                 {entry: logEntry, purpose: "append", type: "success"});
           }, false);
@@ -974,8 +957,10 @@ var tblatex = {
             writeLogDebug("Failed, not inserting.", {type: "failure"});
         }
       } catch (e) {
-        Components.utils.reportError("TBLatex Error (while inserting) "+e);
-        dumpCallStack(e);
+        let message =
+            "Unexpected error while trying to insert the LaTeX document:\n";
+        Components.utils.reportError("LaTeX It! -- " + message + e);
+        writeLog(message + e.message + "\n" + e.stack, {type: "critical"});
       }
       editor.endTransaction();
     };
@@ -1088,15 +1073,16 @@ var tblatex = {
 
     // Remove all cached images on closing the composer window
     if (!prefs.getBoolPref("keeptempfiles")) {
-      for (var key in g_image_cache) {
-        var f = Components.classes["@mozilla.org/file/local;1"].createInstance(Components.interfaces.nsIFile);
+      for (let key in g_image_cache) {
+        let file = Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsIFile);
         try {
-          f.initWithPath(g_image_cache[key].path);
-          f.remove(false);
+          file.initWithPath(g_image_cache[key].path);
+          file.remove(false);
         } catch (e) {
-          // The image file might suddenly be inaccessible. As it is located
-          // in the temporary directory, we now depend on the OS to delete it
-          // at a later time.
+          let message = "Error while trying to remove " +
+              "this temporary file:\n" + file.path;
+          Components.utils.reportError("LaTeX It! -- " + message + "\n" + e);
+          writeLogDebug(message, {type: "warning"});
         }
       }
       g_image_cache = {};
