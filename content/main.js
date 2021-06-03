@@ -107,7 +107,7 @@ var tblatex = {
    * - src is the local path of the image if generated
    * - depth is the number of pixels from the bottom of the image to the baseline of the image
    * */
-  function run_latex(latex_expr, font_px, font_color) {
+  function run_latex(latex_expr, font_px, fontColor) {
 
     var st = 0;
 
@@ -138,8 +138,7 @@ var tblatex = {
         writeLogDebug(message, {type: "warning"});
       }
     }
-
-    let imgKey = latex_expr + font_px + font_color;
+    let imgKey = latex_expr + ";" + font_px + ";" + fontColor.join(" ");
     if (g_image_cache[imgKey]) {
       let imgPath = g_image_cache[imgKey].path;
       if (initFile(imgPath).exists()) {
@@ -412,7 +411,7 @@ var tblatex = {
       "--depth",
       "-D", dpi.toString(),
       "-T", "tight",
-      "-fg", font_color,
+      "-fg", "RGB " + fontColor.join(" "),
       "-bg", "Transparent",
       "-z", "3",
       "-o", temp_file_noext + ".png",
@@ -773,64 +772,78 @@ var tblatex = {
     return p1 + replacement + p2;
   }
 
-  /* replaces each latex text node with the corresponding generated image */
-  function replace_latex_nodes(nodes) {
-    var template = prefs.getCharPref("template");
-    var editor = GetCurrentEditor();
 
-    for (var i = 0; i < nodes.length; ++i) (function (i) { /* Need a real scope here and there is no let-binding available in Thunderbird 2 */
-      var elt = nodes[i];
-
-      writeLog("\nFound expression: " + elt.nodeValue);
-
-      var latex_expr = replace_marker(template, elt.nodeValue);
-
-      writeLogDebug("\nGenerated LaTeX document:\n" + latex_expr);
-
-      // Font size in pixels
-      var font_px = window.getComputedStyle(elt.parentElement, null).getPropertyValue('font-size');
-      // Font color in "rgb(x,y,z)" => "RGB x y z"
-      var font_color = window.getComputedStyle(elt.parentElement, null).getPropertyValue('color').replace(/([\(,\)])/g, " ").replace("rgb", "RGB");
-      var [st, url, depth] = run_latex(latex_expr, font_px, font_color);
-
-      if (st == 0 || st == 1) {
-
-        let logEntry = writeLogDebug(
-            "Replacing node...", {type: "success", color: false});
-
-        var img = editor.createElementWithDefaults("img");
-        var reader = new FileReader();
-        var xhr = new XMLHttpRequest();
-
-        xhr.addEventListener("load",function() {
-          reader.readAsDataURL(xhr.response);
-        },false);
-
-        reader.addEventListener("load", function() {
-          elt.parentNode.insertBefore(img, elt);
-          elt.parentNode.removeChild(elt);
-
-          img.alt = elt.nodeValue;
-          img.style = "vertical-align: -" + depth + "px";
-          img.src = reader.result;
-
-          push_undo_func(() => img.replaceWith(elt));
-
-          writeLogDebug(" done.",
-              {entry: logEntry, purpose: "append", type: "success"});
-        }, false);
-
-        xhr.open('GET',"file://"+url);
-        xhr.responseType = 'blob';
-        xhr.overrideMimeType("image/png");
-        xhr.send();
-      } else {
-        writeLogDebug("Failed, not inserting.", {type: "failure"});
-      }
-    })(i);
+  /**
+   * Converts a color given as "rgb(<r>, <g>, <b>)" or
+   * "rgba(<r>, <g>, <b>, <a>)" to an array [<r>, <g>, <b>].
+   */
+  function cssComputedColorToRgbArray(cssComputedColor) {
+    let fontColorByChannel = cssComputedColor.match(/\d+(\.\d+)?/g) || [];
+    if (![3, 4].includes(fontColorByChannel.length)) {
+      writeLog("Unable to determine font color, defaulting to black.");
+      fontColorByChannel = [0, 0, 0];
+    }
+    return fontColorByChannel;
   }
 
-  tblatex.on_latexit = function (event, silent) {
+
+  /**
+   * Converts a blob to a base64 encoded data URL. Returns a promise.
+   */
+  function blobToDataUrl(blob) {
+    return new Promise((resolve, reject) => {
+      let reader = new FileReader;
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  }
+
+
+  /**
+   * Replaces a LaTeX text node with the corresponding generated image.
+   */
+  async function replaceLatexNode(latexNode, editor, template) {
+
+    writeLog("\nFound expression: " + latexNode.textContent);
+
+    let latexDocument = replace_marker(template, latexNode.textContent);
+    writeLogDebug("\nGenerated LaTeX document:\n" + latexDocument);
+
+    let nodeStyle = window.getComputedStyle(latexNode.parentElement);
+    let fontSizePx = nodeStyle.fontSize;
+    let fontColor = cssComputedColorToRgbArray(nodeStyle.color);
+
+    let [statusCode, imgFilePath, depth] =
+        run_latex(latexDocument, fontSizePx, fontColor);
+
+    if (statusCode > 1) {
+      writeLogDebug("Failed, not inserting.", {type: "failure"});
+      return;
+    }
+
+    let logEntry = writeLogDebug(
+        "Replacing node...", {type: "success", color: false});
+
+    let imgDataUrl = await fetch("file://" + imgFilePath,
+            {headers: {'Content-Type': 'image/png'}})
+        .then(response => response.blob())
+        .then(blobToDataUrl);
+
+    let imgNode = editor.createElementWithDefaults("img");
+    imgNode.src = imgDataUrl;
+    imgNode.alt = latexNode.nodeValue;
+    imgNode.style.verticalAlign = -depth + "px";
+    latexNode.replaceWith(imgNode);
+
+    push_undo_func(() => imgNode.replaceWith(latexNode));
+
+    writeLogDebug(" done.",
+        {entry: logEntry, purpose: "append", type: "success"});
+  }
+
+
+  tblatex.on_latexit = async function (event, silent) {
     /* safety checks */
     if (event.button == 2) return;
     var editor_elt = document.getElementById("content-frame");
@@ -850,7 +863,10 @@ var tblatex = {
       if (!latexNodes.length) {
         writeLog("No unconverted LaTeX expression found.");
       } else {
-        replace_latex_nodes(latexNodes);
+        let template = prefs.getCharPref("template");
+        for (node of latexNodes) {
+          await replaceLatexNode(node, editor, template);
+        }
       }
     } catch (e) {
       let message =
@@ -912,15 +928,10 @@ var tblatex = {
         openLog();
         writeLogDebug("Entered LaTeX document:\n" + latex_expr);
         let elt = editor.selection.anchorNode.parentElement;
-        if (autodpi) {
-          // Font size at cursor position
-          var font_px = window.getComputedStyle(elt).getPropertyValue('font-size');
-        } else {
-          var font_px = font_size+"px";
-        }
-        // Font color in "rgb(x,y,z)" => "RGB x y z"
-        var font_color = window.getComputedStyle(elt).getPropertyValue('color').replace(/([\(,\)])/g, " ").replace("rgb", "RGB");
-        var [st, url, depth] = run_latex(latex_expr, font_px, font_color);
+        let nodeStyle = window.getComputedStyle(elt);
+        let fontSizePx = autodpi ? nodeStyle.fontSize : font_size + "px";
+        let fontColor = cssComputedColorToRgbArray(nodeStyle.color);
+        let [st, url, depth] = run_latex(latex_expr, fontSizePx, fontColor);
 
         if (st == 0 || st == 1) {
 
