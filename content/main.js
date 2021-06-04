@@ -955,8 +955,11 @@ var tblatex = {
       try {
         openLog();
         writeLogDebug("Entered LaTeX document:\n" + latex_expr);
-        let elt = editor.selection.anchorNode.parentElement;
-        let nodeStyle = window.getComputedStyle(elt);
+        let anchorNode = editor.selection.anchorNode;
+        if (anchorNode.nodeType == Node.TEXT_NODE) {
+          anchorNode = anchorNode.parentElement;
+        }
+        let nodeStyle = window.getComputedStyle(anchorNode);
         let fontSizePx = autodpi ? nodeStyle.fontSize : font_size + "px";
         let fontColor = cssComputedColorToRgbArray(nodeStyle.color);
         let [st, url, depth, height, width] = run_latex(latex_expr, fontSizePx, fontColor);
