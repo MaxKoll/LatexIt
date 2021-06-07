@@ -134,7 +134,7 @@ var tblatex = {
         let message = "Error while trying to initialize " +
             "the following path:\n" + file.path;
         errorToConsole(e, message);
-        writeLog(message, {type: "warning"});
+        log.write(message, {type: "warning"});
         return {exists() { return false; }};
       }
     };
@@ -146,7 +146,7 @@ var tblatex = {
         let message = "Error while trying to remove " +
             "this temporary file:\n" + file.path;
         errorToConsole(e, message);
-        writeLogDebug(message, {type: "warning"});
+        log.writeDebug(message, {type: "warning"});
       }
     }
     let imgKey = latex_expr + ";" + font_px + ";" + fontColor.join(" ");
@@ -156,10 +156,10 @@ var tblatex = {
         let depth = g_image_cache[imgKey].depth;
         let height = g_image_cache[imgKey].height;
         let width = g_image_cache[imgKey].width;
-        let logEntry = writeLog("Image was already generated.");
-        writeLogDebug("Image was already generated (depth=" + depth +
+        let logEntry = log.write("Image was already generated.");
+        log.writeDebug("Image was already generated (depth=" + depth +
             ", height=" + height + ", width=" + width + "):\n" + imgPath,
-            {entry: logEntry, purpose: "replace"});
+            {replace: logEntry});
         return [0, imgPath, depth, height, width];
       } else {
         delete g_image_cache[imgKey];
@@ -251,7 +251,7 @@ var tblatex = {
       let cmd = isWindows ?
           shellPathQ + " /c \"cd /d " + dirQ + " && " + argsQ + "\"" :
           shellPathQ + " -c 'cd " + dirQ + " && " + argsQ + "'";
-      writeLogDebug(
+      log.writeDebug(
           "I ran (exit code " + shellProcess.exitValue + "):\n" + cmd);
       return shellProcess.exitValue;
     };
@@ -290,7 +290,7 @@ var tblatex = {
     let logEntryLatexExitValue;
     if (exitValue) {
       st = 1;
-      logEntryLatexExitValue = writeLog("LaTeX process returned " +
+      logEntryLatexExitValue = log.write("LaTeX process returned " +
           exitValue + ". Proceeding anyway.", {type: "warning"});
     }
 
@@ -313,9 +313,8 @@ var tblatex = {
     }
 
     if (logEntryLatexExitValue && logFile.exists()) {
-      writeLog("\nTo see what LaTeX is unhappy about, " +
-          "you can examine its log:\n" + logFile.path,
-          {entry: logEntryLatexExitValue, purpose: "append"});
+      log.write("\nTo see what LaTeX is unhappy about, you can examine " +
+          "its log:\n" + logFile.path, {append: logEntryLatexExitValue});
     }
 
     let png_file = initFile(temp_dir, temp_file_noext + ".png");
@@ -379,22 +378,22 @@ var tblatex = {
     // alpha channel, hence we use "Transparent".
     if (prefs.getBoolPref("autodpi") && font_px) {
       var font_size = parseFloat(font_px);
-      writeLogDebug("Font size of surrounding text: " + font_px);
+      log.writeDebug("Font size of surrounding text: " + font_px);
     } else {
       var font_size = prefs.getIntPref("font_px");
-      writeLogDebug("Using font size of " +
-          font_size + "px as set in preferences.");
+      log.writeDebug("Using font size of " + font_size + "px " +
+          "as set in preferences.");
     }
 
     let dpiFactor = parseFloat(prefs.getCharPref("dpi_factor"));
     if (isNaN(dpiFactor) || dpiFactor < 1 || dpiFactor > 8) {
-      writeLog("Image resolution factor set to invalid value, " +
+      log.write("Image resolution factor set to invalid value, " +
           "defaulting to 2.0", {type: warning});
       dpiFactor = 2;
     }
     let dpiUnscaled = font_size * 72.27 / 10;
     let dpi = dpiFactor * dpiUnscaled;
-    writeLogDebug("Calculated resolution: " + dpiFactor.toFixed(1) + "*" +
+    log.writeDebug("Calculated resolution: " + dpiFactor.toFixed(1) + "*" +
         dpiUnscaled + "dpi = " + dpi + "dpi");
 
     exitValue = runShellCmdInDir(temp_dir, [
@@ -419,12 +418,12 @@ var tblatex = {
           "dvipng failed with exit code " + exitValue + ". Aborting.");
     }
 
-    let logEntryImgFile = writeLogDebug("Generated image:\n" + png_file.path);
+    let logEntryImgFile = log.writeDebug("Generated image:\n" + png_file.path);
 
     // Read the depth (distance between base of image and baseline),
     // height and width from the dimensions file:
     if (!dim_file.exists()) {
-      writeLog("dvipng did not output a dimensions file. " +
+      log.write("dvipng did not output a dimensions file. " +
 -          "Continuing without alignment.");
       g_image_cache[imgKey] =
           {png: png_file.path, depth: 0, height: 0, width: 0};
@@ -460,11 +459,11 @@ var tblatex = {
         height = heightRaw/dpiFactor;
         width = widthRaw/dpiFactor;
         let dpiStr = dpiFactor.toFixed(1);
-        writeLogDebug("Generated image (" +
+        log.writeDebug("Generated image (" +
             "depth=" + depthRaw + "/" + dpiStr + "=" + depth + ", " +
             "height=" + heightRaw + "/" + dpiStr + "=" + height + ", " +
             "width=" + widthRaw + "/" + dpiStr + "=" + width + "):\n" +
-            png_file.path, {entry: logEntryImgFile, purpose: "replace"});
+            png_file.path, {replace: logEntryImgFile});
         break;
       }
     } while(hasmore);
@@ -479,9 +478,9 @@ var tblatex = {
     if (deleteTempFiles) removeFile(texFile);
 
     if (st == 0) {
-      writeLog("Compilation successful.");
+      log.write("Compilation successful.");
     } else if (st == 1) {
-      writeLog("Compilation finished and an image has been produced, " +
+      log.write("Compilation finished and an image has been produced, " +
           "but there were errors.", {type: "warning"});
     }
     g_image_cache[imgKey] =
@@ -499,100 +498,129 @@ var tblatex = {
   }
 
 
-  /**
-   * Writes a message to the log. Has to be unmuted first by calling
-   * openLog(). Will be muted when calling closeLog().
+  /*
+   * The log module. It features the following functions (see module()):
+
+   * Creates or resets the log, and inserts it into the message editor.
+   *
+   open()
+
+   * Removes the log from the message editor.
+   *
+   close()
+
+   * Writes a message to the log. Has to be unmuted first by calling open().
+   * Will be muted when calling close().
    *
    * Takes one or two arguments: A message string and optionally a list of
    * options, i.e. an object literal which may have the following properties:
    *
-   * - type: One of "default", "success", "failure", "warning", "critical".
+   * - type: "default", "success", "failure", "warning" or "critical".
    * Modifies line prefix, leading/trailing blank lines and color.
    *
    * - prefix: Overwrites the default behavior of only debug messages
-   * having line prefixes. If ""/false/null, the line prefix will be removed.
+   * having line prefixes. If ""/false, the line prefix will be removed.
    * If true, the prefix will be shown. If string of 1 to 4 characters length,
    * the String will be padded to 4 characters length and used as prefix.
    *
-   * - color: Message color in CSS format. Unset by passing ""/false/null.
+   * - color: Message color in CSS format. Unset by passing ""/false.
    *
-   * - entry: The return value of a previous call to writeLog[Debug](),
-   * representing this earlier log entry. To be used in combination with
-   * option "purpose".
+   * - append: Instead of creating a new log entry, append the message
+   * to an existing one by passing the return value of the corresponding
+   * previous call to write[Debug]() via this option.
    *
-   * - purpose: One of the following strings:
-   * "after": Message is inserted separately after entry. (default)
-   * "append": Message is appended to entry.
-   * "replace": Message replaces entry.
+   * - replace: Like "append", but the submitted log entry will be replaced.
    *
-   * Precedence: Option "type" will overwrite appearence of a previous
-   * log entry given by option "entry". Options "prefix" and "color" will
-   * overwrite settings implied by options "type" and "entry".
+   * Precedence: Option "type" will overwrite appearence of a previous log
+   * entry given via "append"/"replace". Options "prefix" and "color" will
+   * overwrite settings implied by options "type" and "append"/"replace".
    *
    * Returns an object {node, message[, type, prefix, color]} containing
    * the newly created or modified log entry node and the passed message
    * and options.
+   *
+   write(message, options = {})
+
+   * Same as write(), but will only write to the log if the debug option
+   * is set.
+   *
+   writeDebug(message, options = {})
+
    */
-  let writeLog = (message, options) => {};
+  let log = (() => {
 
+    class Entry {
+      constructor({message, node, type, prefix, color}) {
+        for (let property in arguments[0]) {
+          Object.defineProperty(this, property, {
+            value: arguments[0][property],
+            enumerable: true,
+            configurable: false,
+            writable: false
+          });
+        }
+      }
+    }
 
-  /**
-   * Same as writeLog(), but will only write to
-   * the log if the debug option is set.
-   */
-  let writeLogDebug = (message, options) => {};
+    function open(force = false) {
+      close();
 
+      if (!force && !prefs.getBoolPref("log")) return;
 
-  /**
-   * Initiates logging by creating and inserting the log into the message
-   * editor and unmuting the logging functions.
-   */
-  function openLog() {
+      let editorDocument = GetCurrentEditor().document;
 
-    closeLog();
+      let logNode = editorDocument.createElement("div");
+      logNode.id = "tblatex-log";
+      logNode.style = "position: relative; max-width: 650px; margin: 1em; " +
+          "padding: 0 0.5em 0.5em; border: 1px solid #333; border-radius: 5px;" +
+          "box-shadow: 2px 2px 6px #888; background: white; color: black";
+      // Note: Line break of zero height will show up when copy-pasting.
+      logNode.innerHTML = `
+          <div style="line-height: 40px; font-size: 18px;
+              font-family: sans-serif; font-weight: bold;
+              border-bottom: 1px solid #333">LaTeX It! run report:</div>
+          <br style="line-height: 0">
+          <div id="tblatex-log-closebutton" style="position: absolute;
+              width: 34px; height: 34px; right: 0; top: 0;
+              cursor: pointer; user-select: none">
+            <svg style="width: 12px; height: 12px; position: absolute;
+                top: 14px; right: 14px" fill="black" viewBox="0 0 96 96">
+              <path d="M 55,48 96,7 89,0 48,41 7,0 0,7 41,48 0,89 7,96 48,55
+                  89,96 96,89 Z"/>
+            </svg>
+          </div>
+          <div id="tblatex-log-output" style="font-family: monospace;
+              max-height: 300px; overflow: auto;
+              margin: 0.5em 0 0; padding-right: 0.5em"></div>`;
 
-    if (!prefs.getBoolPref("log")) return;
+      let body = editorDocument.querySelector("body");
+      body.insertBefore(logNode, body.firstChild);
 
-    let edocument = document.getElementById("content-frame").contentDocument;
+      let closeButtonNode = logNode.querySelector("#tblatex-log-closebutton");
+      closeButtonNode.addEventListener("click", close);
+    }
 
-    let logNode = edocument.createElement("div");
-    logNode.id = "tblatex-log";
-    logNode.style = "position: relative; max-width: 650px; margin: 1em; " +
-        "padding: 0 0.5em 0.5em; border: 1px solid #333; border-radius: 5px;" +
-        "box-shadow: 2px 2px 6px #888; background: white; color: black";
-    // Note: Line break of zero height will show up when copy-pasting.
-    logNode.innerHTML = `
-        <div style="line-height: 40px; font-size: 18px;
-            font-family: sans-serif; font-weight: bold;
-            border-bottom: 1px solid #333">LaTeX It! run report:</div>
-        <br style="line-height: 0">
-        <div id="tblatex-log-closebutton" style="position: absolute;
-            width: 34px; height: 34px; right: 0; top: 0;
-            cursor: pointer; user-select: none">
-          <svg style="width: 12px; height: 12px; position: absolute;
-              top: 14px; right: 14px" fill="black" viewBox="0 0 96 96">
-            <path d="M 55,48 96,7 89,0 48,41 7,0 0,7 41,48 0,89 7,96 48,55
-                89,96 96,89 Z"/>
-          </svg>
-        </div>
-        <div id="tblatex-log-output" style="font-family: monospace;
-            max-height: 300px; overflow: auto;
-            margin: 0.5em 0 0; padding-right: 0.5em"></div>`;
+    function close() {
+      let logNode = GetCurrentEditor().document.querySelector("#tblatex-log");
+      if (logNode) logNode.remove();
+    }
 
-    let body = edocument.querySelector("body");
-    body.insertBefore(logNode, body.firstChild);
+    function write(message, options = {}, debug = false) {
+      let prefDebug = prefs.getBoolPref("debug");
+      let editorDocument = GetCurrentEditor().document;
+      let outputNode = editorDocument.querySelector("#tblatex-log-output");
 
-    let closeButtonNode = logNode.querySelector("#tblatex-log-closebutton");
-    closeButtonNode.addEventListener("click", closeLog);
-
-    let outputNode = logNode.querySelector("#tblatex-log-output");
-    let prefDebug = prefs.getBoolPref("debug");
-
-    writeLog = (message, options = {}) => {
+      if (options.type == "critical") {
+        if (!outputNode) {
+          open(true);
+          outputNode = editorDocument.querySelector("#tblatex-log-output");
+        }
+      } else {
+        if ((debug && !prefDebug) || !outputNode) return null;
+      }
 
       /* Apply options (1/3): Set default options. */
-      let entry = null;
-      let purpose = "after";
+      let entryEdit = null;
       let appearence = {
         type: null,
         prefix: (prefDebug ? "*** " : ""),
@@ -600,18 +628,19 @@ var tblatex = {
       };
 
       /* Apply options (2/3): Override default options with those from
-         the handle of a previous log entry, if submitted. */
-      if (options.entry &&
-          typeof options.entry.message == "string" &&
-          options.entry.node instanceof Element &&
-          options.entry.node.closest("#tblatex-log")) {
-        entry = options.entry.node;
-        if (["after", "append", "replace"].includes(options.purpose)) {
-          purpose = options.purpose;
+       * the handle of a previous log entry, if submitted. */
+      ["replace", "append"].forEach(editMethod => {
+        if (options[editMethod] instanceof Entry) {
+          entryEdit = {method: editMethod, ...options[editMethod]};
+        }
+      });
+      if (entryEdit) {
+        if (entryEdit.method == "append") {
+          message = entryEdit.message + message;
         }
         ["type", "prefix", "color"].forEach(property => {
-          if (options.entry.hasOwnProperty(property)) {
-            appearence[property] = options.entry[property];
+          if (entryEdit[property] != null) {
+            appearence[property] = entryEdit[property];
           }
         });
       }
@@ -623,7 +652,7 @@ var tblatex = {
         appearence.type = options.type;
       }
       let hasPrefix = (prefDebug || options.prefix === true) &&
-          !["", false, null].includes(options.prefix);
+          !["", false].includes(options.prefix);
       if (["default", "warning"].includes(appearence.type)) {
         appearence.prefix = hasPrefix ? "*** " : "";
       } else if (["success", "failure"].includes(appearence.type)) {
@@ -636,16 +665,16 @@ var tblatex = {
       } else if (appearence.type == "success") {
         appearence.color = "#089e19";
       } else if (appearence.type == "warning") {
-        appearence.color = "#c2a42b";
+        appearence.color = "#ae34eb";
       } else if (["failure", "critical"].includes(appearence.type)) {
         appearence.color = "#f00000";
       }
       if (typeof options.prefix == "string" && options.prefix.length <= 4) {
         appearence.prefix = options.prefix.padEnd(4);
       }
-      if (options.color && typeof options.color == "string") {
+      if (typeof options.color == "string") {
         appearence.color = options.color;
-      } else if (["", false, null].includes(options.color)) {
+      } else if (options.color === false) {
         appearence.color = "";
       }
 
@@ -653,13 +682,13 @@ var tblatex = {
          - All lines of the message but the first are indented. For this
            to work, the message must not start with a blank line.
          - Leading/trailing blank lines belong to this message and should be
-           affected when changing newEntry. Place them inside newEntry but
-           above/below the inner div which holds the message. */
-      let newEntry = edocument.createElement("div");
-      newEntry.classList.add("entry");
-      newEntry.innerHTML =
+           affected when editing the entry. Place them inside the entry node
+           but above/below the inner div which holds the message. */
+      let node = editorDocument.createElement("div");
+      node.classList.add("entry");
+      node.innerHTML =
           '<div style="margin: 0.2em 0; white-space: pre-wrap"></div>';
-      let messageNode = newEntry.querySelector("div");
+      let messageNode = node.querySelector("div");
       if (appearence.color) {
         messageNode.style.color = appearence.color
       }
@@ -668,19 +697,15 @@ var tblatex = {
         messageNode.style.paddingLeft = "4ch";
       }
 
-      if (!entry) {
-        outputNode.appendChild(newEntry);
-      } else if (purpose == "after") {
-        entry.after(newEntry);
-      } else if (purpose == "append") {
-        message = options.entry.message + message;
-        entry.replaceWith(newEntry);
-      } else if (purpose == "replace") {
-        entry.replaceWith(newEntry);
+      /* Insert the entry node into the log at the correct place. */
+      if (entryEdit) {
+        entryEdit.node.replaceWith(node);
+      } else {
+        outputNode.appendChild(node);
       }
 
       const createLineBreak = (className) => {
-        let lineBreak = edocument.createElement("br");
+        let lineBreak = editorDocument.createElement("br");
         if (className) lineBreak.className = className;
         lineBreak.style = "line-height: 0.8";
         return lineBreak;
@@ -697,7 +722,7 @@ var tblatex = {
       /* Place leading/trailing blank lines above/under message node. */
       while (lines[0] == "") {
         lines.shift();
-        if (newEntry == outputNode.firstElementChild) continue;
+        if (node == outputNode.firstElementChild) continue;
         messageNode.before(createLineBreak("above"));
       }
       while (lines[lines.length - 1] == "") {
@@ -708,7 +733,7 @@ var tblatex = {
       /* Write message. */
       if (lines[0]) lines[0] = appearence.prefix + lines[0];
       lines.forEach(line => {
-        if (line) messageNode.appendChild(edocument.createTextNode(line));
+        if (line) messageNode.appendChild(editorDocument.createTextNode(line));
         messageNode.appendChild(createLineBreak());
       });
 
@@ -726,36 +751,29 @@ var tblatex = {
 
       outputNode.lastElementChild.scrollIntoView(false);
 
-      let returnHandle = {message: message, node: newEntry};
-      ["type", "prefix", "color"].forEach(property => {
-        if (options.hasOwnProperty(property)) {
-          returnHandle[property] = options[property];
-        }
+      return new Entry({
+        message: message,
+        node: node,
+        type: options.type,
+        prefix: options.prefix,
+        color: options.color
       });
-      return returnHandle;
     };
 
-    writeLogDebug = (...args) => {
-      if (!prefDebug) {
-        return null;
-      } else {
-        return writeLog(...args);
-      }
-    };
-  }
+    function module() {
+      return {
+        open: () => open(false),
+        close: close,
+        write: (message, options) =>
+            write(message, options, false),
+        writeDebug: (message, options) =>
+            write(message, options, true)
+      };
+    }
 
+    return module();
 
-  /**
-   * Removes the log from the message editor and mutes the logging functions.
-   */
-  function closeLog() {
-    writeLog = () => {};
-    writeLogDebug = () => {};
-    var editor = document.getElementById("content-frame");
-    var edocument = editor.contentDocument;
-    var logNode = edocument.getElementById("tblatex-log");
-    if (logNode) logNode.remove();
-  }
+  })();
 
 
   function replace_marker(string, replacement) {
@@ -789,7 +807,7 @@ var tblatex = {
   function cssComputedColorToRgbArray(cssComputedColor) {
     let fontColorByChannel = cssComputedColor.match(/\d+(\.\d+)?/g) || [];
     if (![3, 4].includes(fontColorByChannel.length)) {
-      writeLog("Unable to determine font color, defaulting to black.");
+      log.write("Unable to determine font color, defaulting to black.");
       fontColorByChannel = [0, 0, 0];
     }
     return fontColorByChannel;
@@ -814,10 +832,10 @@ var tblatex = {
    */
   async function replaceLatexNode(latexNode, editor, template) {
 
-    writeLog("\nFound expression: " + latexNode.textContent);
+    log.write("\nFound expression: " + latexNode.textContent);
 
     let latexDocument = replace_marker(template, latexNode.textContent);
-    writeLogDebug("\nGenerated LaTeX document:\n" + latexDocument);
+    log.writeDebug("\nGenerated LaTeX document:\n" + latexDocument);
 
     let nodeStyle = window.getComputedStyle(latexNode.parentElement);
     let fontSizePx = nodeStyle.fontSize;
@@ -826,8 +844,8 @@ var tblatex = {
     let [statusCode, imgFilePath, depth, height, width] =
         run_latex(latexDocument, fontSizePx, fontColor);
 
-    let logEntry = writeLogDebug(
-        "Replacing node...", {type: "success", color: false});
+    let logEntry = log.writeDebug("Replacing node...",
+        {type: "success", color: false});
 
     let imgDataUrl = await fetch("file://" + imgFilePath,
             {headers: {'Content-Type': 'image/png'}})
@@ -848,8 +866,7 @@ var tblatex = {
 
     push_undo_func(() => imgNode.replaceWith(latexNode));
 
-    writeLogDebug(" done.",
-        {entry: logEntry, purpose: "append", type: "success"});
+    log.writeDebug(" done.", {append: logEntry, type: "success"});
   }
 
 
@@ -866,11 +883,12 @@ var tblatex = {
     }
     var editor = GetCurrentEditor();
     editor.beginTransaction();
-    silent ? closeLog() : openLog();
+    log.close();
+    if (!silent) log.open();
     var body = editor_elt.contentDocument.getElementsByTagName("body")[0];
     let latexNodes = prepareLatexNodes(body);
     if (!latexNodes.length) {
-      writeLog("No unconverted LaTeX expression found.");
+      log.write("No unconverted LaTeX expression found.");
     } else {
       let template = prefs.getCharPref("template");
       try {
@@ -878,8 +896,8 @@ var tblatex = {
           await replaceLatexNode(node, editor, template);
         }
       } catch(e) {
-        let logEntry = writeLog(e.message, {type: "critical"});
-        writeLogDebug("\n\n" + e.stack, {entry: logEntry, purpose: "append"});
+        let logEntry = log.write(e.message, {type: "critical"});
+        log.writeDebug("\n\n" + e.stack, {append: logEntry});
         errorToConsole(e);
       }
     }
@@ -934,8 +952,8 @@ var tblatex = {
       g_complex_input = latex_expr;
       editor.beginTransaction();
       try {
-        openLog();
-        writeLogDebug("Entered LaTeX document:\n" + latex_expr);
+        log.open();
+        log.writeDebug("Entered LaTeX document:\n" + latex_expr);
         let anchorNode = editor.selection.anchorNode;
         if (anchorNode.nodeType == Node.TEXT_NODE) {
           anchorNode = anchorNode.parentElement;
@@ -947,7 +965,7 @@ var tblatex = {
 
         if (st == 0 || st == 1) {
 
-          let logEntry = writeLogDebug("Inserting at cursor position...",
+          let logEntry = log.writeDebug("Inserting at cursor position...",
               {type: "success", color: false});
 
           var img = editor.createElementWithDefaults("img");
@@ -973,8 +991,7 @@ var tblatex = {
             }
 
             push_undo_func(() => img.remove());
-            writeLogDebug(" done.",
-                {entry: logEntry, purpose: "append", type: "success"});
+            log.writeDebug(" done.", {append: logEntry, type: "success"});
           }, false);
 
           xhr.open('GET',"file://"+url);
@@ -982,13 +999,13 @@ var tblatex = {
           xhr.overrideMimeType("image/png");
           xhr.send();
         } else {
-            writeLogDebug("Failed, not inserting.", {type: "failure"});
+            log.writeDebug("Failed, not inserting.", {type: "failure"});
         }
       } catch (e) {
         let message = "Error while trying to insert the LaTeX document:\n";
         errorToConsole(e, message);
-        let logEntry = writeLog(message + e.message, {type: "critical"});
-        writeLogDebug("\n\n" + e.stack, {entry: logEntry, purpose: "append"});
+        let logEntry = log.write(message + e.message, {type: "critical"});
+        log.writeDebug("\n\n" + e.stack, {append: logEntry});
       }
       editor.endTransaction();
     };
@@ -1110,7 +1127,7 @@ var tblatex = {
           let message = "Error while trying to remove " +
               "this temporary file:\n" + file.path;
           errorToConsole(e, message);
-          writeLogDebug(message, {type: "warning"});
+          log.writeDebug(message, {type: "warning"});
         }
       }
       g_image_cache = {};
