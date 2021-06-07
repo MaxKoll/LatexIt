@@ -88,6 +88,14 @@ var tblatex = {
   }
 
 
+  function errorToConsole(e, message = "") {
+    let originalMessage = e.message;
+    e.message = "LaTeX It! -- " + (message ? message + "\n" : "") + e.message;
+    console.log(e);
+    e.message = originalMessage;
+  }
+
+
   /**
    * Returns a random alphanumeric string of given length.
    */
@@ -102,8 +110,8 @@ var tblatex = {
 
 
   /* Returns [st, src, depth, height, width] where:
-   * - st is 0 if everything went ok, 1 if some error was found but the image
-   *   was nonetheless generated, 2 if there was a fatal error
+   * - st is 0 if everything went ok and 1 if some error was found but the
+   *   image was nonetheless generated
    * - src is the local path of the image if generated
    * - depth is the number of pixels from the bottom of the image to the
    *   baseline of the image
@@ -125,8 +133,8 @@ var tblatex = {
       } catch (e) {
         let message = "Error while trying to initialize " +
             "the following path:\n" + file.path;
-        Components.utils.reportError("LaTeX It! -- " + message + "\n" + e);
-        writeLog(message, {type: "critical"});
+        errorToConsole(e, message);
+        writeLog(message, {type: "warning"});
         return {exists() { return false; }};
       }
     };
@@ -137,7 +145,7 @@ var tblatex = {
       } catch (e) {
         let message = "Error while trying to remove " +
             "this temporary file:\n" + file.path;
-        Components.utils.reportError("LaTeX It! -- " + message + "\n" + e);
+        errorToConsole(e, message);
         writeLogDebug(message, {type: "warning"});
       }
     }
@@ -158,32 +166,21 @@ var tblatex = {
       }
     }
 
-    // Check if the LaTeX expression (that is, the whole file) contains the required packages.
+    // Check if the LaTeX document contains the required packages.
     // At the moment, it checks for the minimum of
-    // - \usepackage[active]{preview}
-    // which must not be commented out.
-    //
-    // The 'preview' package is needed for the baseline alignment with the surrounding text
-    // introduced in v0.7.x.
-    //
-    // If the package(s) cannot be found, an alert message window is shown, informing the user.
+    //   \usepackage[active]{preview}
+    // which must not be commented out. The 'preview' package is needed
+    // for the baseline alignment with the surrounding text.
     var re = /^[^%]*\\usepackage\[(.*,\s*)?active(,.*)?\]{(.*,\s*)?preview(,.*)?}/m;
     var package_match = latex_expr.match(re);
     if (!package_match) {
-      alert("The mandatory package 'preview' cannot be found in the " +
-          "LaTeX document.\n\nPlease add the following line in the " +
-          "preamble of your LaTeX template or complex expression:\n" +
+      throw new Error(
+          "The mandatory package 'preview' cannot be found in the " +
+          "LaTeX document. Please add the following line in the " +
+          "preamble of your LaTeX template or complex expression:\n\n" +
           "\\usepackage[active,displaymath,textmath]{preview}\n\n" +
           "Note: The preview package is needed for the alignment of the " +
           "generated images with the surrounding text.");
-      writeLog("The mandatory package 'preview' cannot be found in the " +
-          "LaTeX document.\nPlease add the following line in the " +
-          "preamble of your LaTeX template or complex expression:\n" +
-          "\\usepackage[active,displaymath,textmath]{preview}\n" +
-          "Note: The preview package is needed for the alignment of the " +
-          "generated images with the surrounding text.",
-          {type: "critical"});
-      return [2, "", 0, 0, 0];
     }
 
     /* \u00a0 = non-breaking space. \u2011 = non-breaking hyphen. */
@@ -191,23 +188,15 @@ var tblatex = {
         .replace(/ /g, "\u00a0").replace(/-/, "\u2011");
     let latex_bin = initFile(prefs.getCharPref("latex_path"));
     if (!latex_bin.exists()) {
-      alert("Cannot find the 'latex' executable.\n\n" +
-          "Please make sure the correct path is set in the add-on's\n" +
-          "options dialog (☰ ➜ Add-ons ➜ LaTeX It!).");
-      writeLog("Cannot find the 'latex' executable. Please make sure " +
-          "the correct path is set in the add-on's options dialog (" +
-          logHintAddonOptions + ").", {type: "critical"});
-      return [2, "", 0, 0, 0];
+      throw new Error("Cannot find the 'latex' executable. " +
+          "Please make sure the correct path is set in the " +
+          "add-on's options dialog (" + logHintAddonOptions + ").");
     }
     let dvipng_bin = initFile(prefs.getCharPref("dvipng_path"));
     if (!dvipng_bin.exists()) {
-      alert("The 'dvipng' executable cannot be found.\n\n" +
-          "Please make sure the correct path is set in the add-on's\n" +
-          "options dialog (☰ ➜ Add-ons ➜ LaTeX It!).");
-      writeLog("The 'dvipng' executable cannot be found. Please make sure " +
-          "the correct path is set in the add-on's options dialog (" +
-          logHintAddonOptions + ").", {type: "critical"});
-      return [2, "", 0, 0, 0];
+      throw new Error("The 'dvipng' executable cannot be found. " +
+          "Please make sure the correct path is set in the " +
+          "add-on's options dialog (" + logHintAddonOptions + ").");
     }
     // Alignment of the inserted pictures to the text baseline works as follows
     // (see also https://github.com/protz/LatexIt/issues/36):
@@ -320,8 +309,7 @@ var tblatex = {
         message += "\nPlease examine its log to learn " +
             "what went wrong:\n" + logFile.path;
       }
-      writeLog(message, {type: "critical"});
-      return [2, "", 0, 0, 0];
+      throw new Error(message);
     }
 
     if (logEntryLatexExitValue && logFile.exists()) {
@@ -427,9 +415,8 @@ var tblatex = {
     if (deleteTempFiles) removeFile(dviFile);
 
     if (exitValue) {
-      writeLog("dvipng failed with exit code " + exitValue +
-          ". Aborting.", {type: "critical"});
-      return [2, "", 0, 0, 0];
+      throw new Error(
+          "dvipng failed with exit code " + exitValue + ". Aborting.");
     }
 
     let logEntryImgFile = writeLogDebug("Generated image:\n" + png_file.path);
@@ -780,10 +767,10 @@ var tblatex = {
       // Look for old marker
       i = string.indexOf(oldmarker);
       if (i < 0) {
-        writeLog("Could not find the placeholder '" + marker + "' in " +
-            "your template.\nThis would be the place, where your LaTeX " +
-            "expression is inserted.\nPlease edit your template and add " +
-            "this placeholder.", {type: "critical"});
+        throw new Error("Could not find the placeholder '" + marker +
+            "' in your template.\nThis would be the place where " +
+            "your LaTeX expression is inserted.\nPlease edit your " +
+            "template and add this placeholder.");
         return null;
       } else {
         len = oldmarker.length;
@@ -839,11 +826,6 @@ var tblatex = {
     let [statusCode, imgFilePath, depth, height, width] =
         run_latex(latexDocument, fontSizePx, fontColor);
 
-    if (statusCode > 1) {
-      writeLogDebug("Failed, not inserting.", {type: "failure"});
-      return;
-    }
-
     let logEntry = writeLogDebug(
         "Replacing node...", {type: "success", color: false});
 
@@ -884,23 +866,22 @@ var tblatex = {
     }
     var editor = GetCurrentEditor();
     editor.beginTransaction();
-    try {
-      silent ? closeLog() : openLog();
-      var body = editor_elt.contentDocument.getElementsByTagName("body")[0];
-      let latexNodes = prepareLatexNodes(body);
-      if (!latexNodes.length) {
-        writeLog("No unconverted LaTeX expression found.");
-      } else {
-        let template = prefs.getCharPref("template");
+    silent ? closeLog() : openLog();
+    var body = editor_elt.contentDocument.getElementsByTagName("body")[0];
+    let latexNodes = prepareLatexNodes(body);
+    if (!latexNodes.length) {
+      writeLog("No unconverted LaTeX expression found.");
+    } else {
+      let template = prefs.getCharPref("template");
+      try {
         for (node of latexNodes) {
           await replaceLatexNode(node, editor, template);
         }
+      } catch(e) {
+        let logEntry = writeLog(e.message, {type: "critical"});
+        writeLogDebug("\n\n" + e.stack, {entry: logEntry, purpose: "append"});
+        errorToConsole(e);
       }
-    } catch (e) {
-      let message =
-          "Unexpected error while trying to replace LaTeX expressions:\n";
-      Components.utils.reportError("LaTeX It! -- " + message + e);
-      writeLog(message + e.message + "\n" + e.stack, {type: "critical"});
     }
     editor.endTransaction();
   };
@@ -1004,10 +985,10 @@ var tblatex = {
             writeLogDebug("Failed, not inserting.", {type: "failure"});
         }
       } catch (e) {
-        let message =
-            "Unexpected error while trying to insert the LaTeX document:\n";
-        Components.utils.reportError("LaTeX It! -- " + message + e);
-        writeLog(message + e.message + "\n" + e.stack, {type: "critical"});
+        let message = "Error while trying to insert the LaTeX document:\n";
+        errorToConsole(e, message);
+        let logEntry = writeLog(message + e.message, {type: "critical"});
+        writeLogDebug("\n\n" + e.stack, {entry: logEntry, purpose: "append"});
       }
       editor.endTransaction();
     };
@@ -1128,7 +1109,7 @@ var tblatex = {
         } catch (e) {
           let message = "Error while trying to remove " +
               "this temporary file:\n" + file.path;
-          Components.utils.reportError("LaTeX It! -- " + message + "\n" + e);
+          errorToConsole(e, message);
           writeLogDebug(message, {type: "warning"});
         }
       }
