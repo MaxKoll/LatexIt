@@ -483,12 +483,6 @@ var tblatex = {
 -          "Continuing without alignment.", {type: "warning"});
     }
 
-    if (st == 0) {
-      log.write("Compilation successful.");
-    } else if (st == 1) {
-      log.write("Compilation finished and an image has been produced, " +
-          "but there were errors.", {type: "warning"});
-    }
     g_image_cache[imgKey] =
         {path: png_file.path, depth: depth, height: height, width: width};
     return [st, png_file.path, depth, height, width];
@@ -950,6 +944,8 @@ var tblatex = {
     push_undo_func(() => imgNode.replaceWith(latexNode));
 
     log.writeDebug(" done.", {append: logEntry, type: "success"});
+
+    return statusCode;
   }
 
 
@@ -1003,10 +999,18 @@ var tblatex = {
       let template = prefs.getCharPref("template");
       let threadLimiter = new ThreadLimiter();
       try {
-        await Promise.all(latexNodes.map(node => {
+        let exitCodes = await Promise.all(latexNodes.map(node => {
           return threadLimiter.call(
               replaceLatexNode, node, editor, template, log.startThread())
         }));
+        let hasWarnings = false;
+        exitCodes.forEach(code => { if (code > 0) hasWarnings = true; });
+        if (hasWarnings) {
+          log.write("\nAll LaTeX expressions have been compiled, " +
+              "but there were errors.", {type: "warning"});
+        } else {
+          log.write("\nAll LaTeX expressions successfully converted.");
+        }
       } catch(e) {
         let logEntry = log.write(e.message, {type: "critical"});
         log.writeDebug("\n\n" + e.stack, {append: logEntry});
@@ -1108,6 +1112,13 @@ var tblatex = {
 
             push_undo_func(() => img.remove());
             log.writeDebug(" done.", {append: logEntry, type: "success"});
+
+            if (st > 0) {
+              log.write("\nThe LaTeX document has been compiled, " +
+                  "but there were errors.", {type: "warning"});
+            } else {
+              log.write("\nLaTeX document successfully converted.");
+            }
           }, false);
 
           xhr.open('GET',"file://"+url);
