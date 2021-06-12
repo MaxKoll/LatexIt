@@ -786,6 +786,12 @@ var tblatex = {
       });
     };
 
+    function enableCloseButton() {
+      let closeButtonNode = GetCurrentEditor().document
+          .querySelector("#tblatex-log-closebutton");
+      if (closeButtonNode) closeButtonNode.addEventListener("click", close);
+    }
+
     function module(thread) {
       return {
         open: () => open(false),
@@ -794,7 +800,8 @@ var tblatex = {
             write(message, options, thread, false),
         writeDebug: (message, options) =>
             write(message, options, thread, true),
-        startThread: startThread
+        startThread: startThread,
+        enableCloseButton: enableCloseButton
       };
     }
 
@@ -1236,6 +1243,13 @@ var tblatex = {
           menu.disabled = true;
       }
     }
+
+    // Enable the close button of an existing log (e.g. in a draft email).
+    const editorCreationObserver = (subject, topic, data) => {
+      if (topic == "obs_documentCreated") log.enableCloseButton();
+    }
+    GetCurrentCommandManager()
+        .addCommandObserver(editorCreationObserver, "obs_documentCreated");
   }
 
   tblatex.on_unload = function() {
