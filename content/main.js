@@ -118,7 +118,7 @@ var tblatex = {
    * - height is the total height of the generated image in pixels
    * - width is the total width of the generated image in pixels
    * */
-  function run_latex(latex_expr, font_px, fontColor) {
+  async function run_latex(latex_expr, font_px, fontColor, log) {
 
     var st = 0;
 
@@ -245,15 +245,27 @@ var tblatex = {
           .createInstance(Ci.nsIProcess);
       shellProcess.init(shellBin);
       shellProcess.startHidden = true;
-      shellProcess.run(true, shellArgs, shellArgs.length);
+
+      let processObserver;
+
+      let exitValue = new Promise((resolve, reject) => {
+        processObserver = (subject, topic, data) => {
+          log.writeDebug("\n(Finished with exit code " +
+              shellProcess.exitValue + ".)", {append: logEntry});
+          resolve(shellProcess.exitValue);
+        };
+      });
+
+      shellProcess.runAsync(shellArgs, shellArgs.length, processObserver);
+
       let shellPathQ = addQuotesIfWhitespace(shellBin.path);
       let argsQ = args.map(addQuotesIfWhitespace).join(" ");
       let cmd = isWindows ?
           shellPathQ + " /c \"cd /d " + dirQ + " && " + argsQ + "\"" :
           shellPathQ + " -c 'cd " + dirQ + " && " + argsQ + "'";
-      log.writeDebug(
-          "I ran (exit code " + shellProcess.exitValue + "):\n" + cmd);
-      return shellProcess.exitValue;
+      let logEntry = log.writeDebug("I called:\n" + cmd);
+
+      return exitValue;
     };
 
     var temp_dir = Components.classes["@mozilla.org/file/directory_service;1"].
@@ -281,7 +293,7 @@ var tblatex = {
     converter.writeString(latex_expr);
     converter.close();
 
-    let exitValue = runShellCmdInDir(temp_dir, [
+    let exitValue = await runShellCmdInDir(temp_dir, [
       latex_bin.path,
       "-interaction=batchmode",
       temp_file_noext + ".tex"
@@ -396,7 +408,7 @@ var tblatex = {
     log.writeDebug("Calculated resolution: " + dpiFactor.toFixed(1) + "*" +
         dpiUnscaled + "dpi = " + dpi + "dpi");
 
-    exitValue = runShellCmdInDir(temp_dir, [
+    exitValue = await runShellCmdInDir(temp_dir, [
       dvipng_bin.path,
       "--depth",
       "--height",
@@ -509,6 +521,11 @@ var tblatex = {
    *
    close()
 
+   * Returns the log module but with write[Debug]() bound to a specific thread.
+   * All messages of this thread will be output in succession.
+   *
+   startThread()
+
    * Writes a message to the log. Has to be unmuted first by calling open().
    * Will be muted when calling close().
    *
@@ -549,6 +566,8 @@ var tblatex = {
    */
   let log = (() => {
 
+    let threadCount = {value: 0};
+
     class Entry {
       constructor({message, node, type, prefix, color}) {
         for (let property in arguments[0]) {
@@ -566,6 +585,8 @@ var tblatex = {
       close();
 
       if (!force && !prefs.getBoolPref("log")) return;
+
+      threadCount.value = 0;
 
       let editorDocument = GetCurrentEditor().document;
 
@@ -605,7 +626,12 @@ var tblatex = {
       if (logNode) logNode.remove();
     }
 
-    function write(message, options = {}, debug = false) {
+    function startThread() {
+      threadCount.value += 1;
+      return module(threadCount.value);
+    }
+
+    function write(message, options = {}, thread, debug = false) {
       let prefDebug = prefs.getBoolPref("debug");
       let editorDocument = GetCurrentEditor().document;
       let outputNode = editorDocument.querySelector("#tblatex-log-output");
@@ -699,7 +725,19 @@ var tblatex = {
 
       /* Insert the entry node into the log at the correct place. */
       if (entryEdit) {
+        if (entryEdit.node.dataset.thread) {
+          node.dataset.thread = entryEdit.node.dataset.thread;
+        }
         entryEdit.node.replaceWith(node);
+      } else if (thread) {
+        node.dataset.thread = thread;
+        let threadNodes =
+            outputNode.querySelectorAll("[data-thread='" + thread + "']");
+        if (threadNodes.length) {
+          threadNodes[threadNodes.length - 1].after(node);
+        } else {
+          outputNode.appendChild(node);
+        }
       } else {
         outputNode.appendChild(node);
       }
@@ -760,14 +798,15 @@ var tblatex = {
       });
     };
 
-    function module() {
+    function module(thread) {
       return {
         open: () => open(false),
         close: close,
         write: (message, options) =>
-            write(message, options, false),
+            write(message, options, thread, false),
         writeDebug: (message, options) =>
-            write(message, options, true)
+            write(message, options, thread, true),
+        startThread: startThread
       };
     }
 
@@ -804,7 +843,7 @@ var tblatex = {
    * Converts a color given as "rgb(<r>, <g>, <b>)" or
    * "rgba(<r>, <g>, <b>, <a>)" to an array [<r>, <g>, <b>].
    */
-  function cssComputedColorToRgbArray(cssComputedColor) {
+  function cssComputedColorToRgbArray(cssComputedColor, log) {
     let fontColorByChannel = cssComputedColor.match(/\d+(\.\d+)?/g) || [];
     if (![3, 4].includes(fontColorByChannel.length)) {
       log.write("Unable to determine font color, defaulting to black.");
@@ -830,7 +869,7 @@ var tblatex = {
   /**
    * Replaces a LaTeX text node with the corresponding generated image.
    */
-  async function replaceLatexNode(latexNode, editor, template) {
+  async function replaceLatexNode(latexNode, editor, template, log) {
 
     log.write("\nFound expression: " + latexNode.textContent);
 
@@ -839,10 +878,10 @@ var tblatex = {
 
     let nodeStyle = window.getComputedStyle(latexNode.parentElement);
     let fontSizePx = nodeStyle.fontSize;
-    let fontColor = cssComputedColorToRgbArray(nodeStyle.color);
+    let fontColor = cssComputedColorToRgbArray(nodeStyle.color, log);
 
     let [statusCode, imgFilePath, depth, height, width] =
-        run_latex(latexDocument, fontSizePx, fontColor);
+        await run_latex(latexDocument, fontSizePx, fontColor, log);
 
     let logEntry = log.writeDebug("Replacing node...",
         {type: "success", color: false});
@@ -870,6 +909,31 @@ var tblatex = {
   }
 
 
+  class ThreadLimiter {
+
+    constructor() {
+      this.maxRunningThreads = navigator.hardwareConcurrency;
+      this.numRunningThreads = 0;
+      this.queuedThreads = [];
+    }
+
+    async call(func, ...args) {
+      if (this.numRunningThreads >= this.maxRunningThreads) {
+        await new Promise((resolve, reject) => {
+          this.queuedThreads.push(resolve);
+        });
+      }
+      this.numRunningThreads += 1;
+      return func(...args)
+          .then(result => {
+            if (this.queuedThreads.length) this.queuedThreads.shift()();
+            this.numRunningThreads -= 1;
+            return result;
+          });
+    }
+  }
+
+
   tblatex.on_latexit = async function (event, silent) {
     /* safety checks */
     if (event.button == 2) return;
@@ -882,6 +946,7 @@ var tblatex = {
       return;
     }
     var editor = GetCurrentEditor();
+    editor.flags |= editor.eEditorReadonlyMask;
     editor.beginTransaction();
     log.close();
     if (!silent) log.open();
@@ -891,10 +956,12 @@ var tblatex = {
       log.write("No unconverted LaTeX expression found.");
     } else {
       let template = prefs.getCharPref("template");
+      let threadLimiter = new ThreadLimiter();
       try {
-        for (node of latexNodes) {
-          await replaceLatexNode(node, editor, template);
-        }
+        await Promise.all(latexNodes.map(node => {
+          return threadLimiter.call(
+              replaceLatexNode, node, editor, template, log.startThread())
+        }));
       } catch(e) {
         let logEntry = log.write(e.message, {type: "critical"});
         log.writeDebug("\n\n" + e.stack, {append: logEntry});
@@ -902,6 +969,7 @@ var tblatex = {
       }
     }
     editor.endTransaction();
+    editor.flags &= ~editor.eEditorReadonlyMask;
   };
 
   tblatex.on_middleclick = function(event) {
@@ -948,7 +1016,7 @@ var tblatex = {
 
   tblatex.on_insert_complex = function (event) {
     var editor = GetCurrentEditor();
-    var f = function (latex_expr, autodpi, font_size) {
+    var f = async function (latex_expr, autodpi, font_size) {
       g_complex_input = latex_expr;
       editor.beginTransaction();
       try {
@@ -961,7 +1029,8 @@ var tblatex = {
         let nodeStyle = window.getComputedStyle(anchorNode);
         let fontSizePx = autodpi ? nodeStyle.fontSize : font_size + "px";
         let fontColor = cssComputedColorToRgbArray(nodeStyle.color);
-        let [st, url, depth, height, width] = run_latex(latex_expr, fontSizePx, fontColor);
+        let [st, url, depth, height, width] =
+            await run_latex(latex_expr, fontSizePx, fontColor, log);
 
         if (st == 0 || st == 1) {
 
