@@ -435,55 +435,53 @@ var tblatex = {
 
     // Read the depth (distance between base of image and baseline),
     // height and width from the dimensions file:
-    if (!dim_file.exists()) {
-      log.write("dvipng did not output a dimensions file. " +
--          "Continuing without alignment.");
-      g_image_cache[imgKey] =
-          {png: png_file.path, depth: 0, height: 0, width: 0};
-      return [st, png_file.path, 0, 0, 0];
-    }
-
-    // https://developer.mozilla.org
-    //     /en-US/docs/Archive/Add-ons/Code_snippets/File_I_O#Line_by_line
-    let inputStream = Cc["@mozilla.org/network/file-input-stream;1"].
-        createInstance(Ci.nsIFileInputStream);
-    inputStream.init(dim_file, 0x01, 0444, 0);
-    inputStream.QueryInterface(Ci.nsILineInputStream);
-
-    // Read line by line and look for the image dimensions,
-    // which are contained in a line of this general form:
-    //   [%d (%d) depth=%d height=%d width=%d] \n
-    // Here, %d denotes an integer. Not all space separated fields
-    // are necessarily present. This applies to all versions
-    // of dvipng since 2010 (see source, specifically "draw.c").
-    let regex = /depth=(\d+) height=(\d+) width=(\d+)/;
-    let line = {};
-    let hasMore;
     let depth = 0;
     let height = 0;
     let width = 0;
-    do {
-      hasMore = inputStream.readLine(line);
-      let linematch = line.value.match(regex);
-      if (linematch) {
-        let depthRaw = Number(linematch[1]);
-        let heightRaw = Number(linematch[1]) + Number(linematch[2]);
-        let widthRaw = Number(linematch[3]);
-        depth = depthRaw/dpiFactor;
-        height = heightRaw/dpiFactor;
-        width = widthRaw/dpiFactor;
-        let dpiStr = dpiFactor.toFixed(1);
-        log.writeDebug("Generated image (" +
-            "depth=" + depthRaw + "/" + dpiStr + "=" + depth + ", " +
-            "height=" + heightRaw + "/" + dpiStr + "=" + height + ", " +
-            "width=" + widthRaw + "/" + dpiStr + "=" + width + "):\n" +
-            png_file.path, {replace: logEntryImgFile});
-        break;
-      }
-    } while(hasMore);
+    if (dim_file.exists()) {
+      // https://developer.mozilla.org
+      //     /en-US/docs/Archive/Add-ons/Code_snippets/File_I_O#Line_by_line
+      let inputStream = Cc["@mozilla.org/network/file-input-stream;1"].
+          createInstance(Ci.nsIFileInputStream);
+      inputStream.init(dim_file, 0x01, 0444, 0);
+      inputStream.QueryInterface(Ci.nsILineInputStream);
 
-    inputStream.close();
-    if (deleteTempFiles) removeFile(dim_file);
+      // Read line by line and look for the image dimensions,
+      // which are contained in a line of this general form:
+      //   [%d (%d) depth=%d height=%d width=%d] \n
+      // Here, %d denotes an integer. Not all space separated fields
+      // are necessarily present. This applies to all versions
+      // of dvipng since 2010 (see source, specifically "draw.c").
+      let regex = /depth=(\d+) height=(\d+) width=(\d+)/;
+      let line = {};
+      let hasMore;
+      do {
+        hasMore = inputStream.readLine(line);
+        let linematch = line.value.match(regex);
+        if (linematch) {
+          let depthRaw = Number(linematch[1]);
+          let heightRaw = Number(linematch[1]) + Number(linematch[2]);
+          let widthRaw = Number(linematch[3]);
+          depth = depthRaw/dpiFactor;
+          height = heightRaw/dpiFactor;
+          width = widthRaw/dpiFactor;
+          let dpiStr = dpiFactor.toFixed(1);
+          log.writeDebug("Generated image (" +
+              "depth=" + depthRaw + "/" + dpiStr + "=" + depth + ", " +
+              "height=" + heightRaw + "/" + dpiStr + "=" + height + ", " +
+              "width=" + widthRaw + "/" + dpiStr + "=" + width + "):\n" +
+              png_file.path, {replace: logEntryImgFile});
+          break;
+        }
+      } while(hasMore);
+
+      inputStream.close();
+      if (deleteTempFiles) removeFile(dim_file);
+    } else {
+      st = 1;
+      log.write("dvipng did not output a dimensions file. " +
+-          "Continuing without alignment.", {type: "warning"});
+    }
 
     if (st == 0) {
       log.write("Compilation successful.");
