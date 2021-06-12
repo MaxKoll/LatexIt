@@ -815,6 +815,56 @@ var tblatex = {
   })();
 
 
+  let busyIcon = {
+
+    insert: function() {
+
+      let editorDocument = GetCurrentEditor().document;
+
+      let iconNode = editorDocument.createElement("div");
+      iconNode.id = "tblatex-busy-icon";
+      iconNode.style = `
+          position: fixed; z-index: 999; border-radius: 14px;
+          width: 64px; height: 64px; left: calc(50% - 32px);
+          top: calc(50% - 32px);background: rgba(0, 0, 0, 0.5);
+          box-shadow: 1px 1px 4px rgba(0, 0, 0, 0.5)`;
+      iconNode.innerHTML = `
+          <svg viewBox="0 0 256 256" style="color: white; position: absolute;
+              width: 32px; height: 32px; top: 16px; left: 16px;
+              animation: 1s linear infinite tblatex-busy-icon-animation">
+            <defs>
+              <mask id="tblatex-busy-icon-mask">
+                <rect width="100%" height="100%" fill="white"/>
+                <circle r="112" cx="135" cy="128" fill="black"/>
+              </mask>
+            </defs>
+            <circle fill="currentColor" r="116" cx="119" cy="128"
+                mask="url(#tblatex-busy-icon-mask)"/>
+          </svg>`;
+
+      let styleNode = editorDocument.createElement("style");
+      styleNode.id = "tblatex-busy-icon-style";
+      styleNode.innerHTML = `
+          @keyframes tblatex-busy-icon-animation {
+              0% { transform: rotate(  0deg) }
+            100% { transform: rotate(360deg) }
+          }`;
+
+      let body = editorDocument.querySelector("body");
+      body.insertBefore(iconNode, body.firstChild);
+
+      let head = editorDocument.querySelector("head");
+      head.appendChild(styleNode);
+    },
+
+    remove: function() {
+      let editorDocument = GetCurrentEditor().document;
+      editorDocument.querySelector("#tblatex-busy-icon").remove();
+      editorDocument.querySelector("#tblatex-busy-icon-style").remove();
+    }
+  };
+
+
   function replace_marker(string, replacement) {
     var marker = "__REPLACE_ME__";
     var oldmarker = "__REPLACEME__";
@@ -955,6 +1005,7 @@ var tblatex = {
     if (!latexNodes.length) {
       log.write("No unconverted LaTeX expression found.");
     } else {
+      busyIcon.insert();
       let template = prefs.getCharPref("template");
       let threadLimiter = new ThreadLimiter();
       try {
@@ -967,6 +1018,7 @@ var tblatex = {
         log.writeDebug("\n\n" + e.stack, {append: logEntry});
         errorToConsole(e);
       }
+      busyIcon.remove();
     }
     editor.endTransaction();
     editor.flags &= ~editor.eEditorReadonlyMask;
@@ -1018,6 +1070,7 @@ var tblatex = {
     var editor = GetCurrentEditor();
     var f = async function (latex_expr, autodpi, font_size) {
       g_complex_input = latex_expr;
+      busyIcon.insert();
       editor.beginTransaction();
       try {
         log.open();
@@ -1077,6 +1130,7 @@ var tblatex = {
         log.writeDebug("\n\n" + e.stack, {append: logEntry});
       }
       editor.endTransaction();
+      busyIcon.remove();
     };
     var template = g_complex_input || prefs.getCharPref("template");
     var selection = editor.selection.toString();
