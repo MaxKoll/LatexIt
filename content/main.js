@@ -443,12 +443,12 @@ var tblatex = {
       return [st, png_file.path, 0, 0, 0];
     }
 
-    // https://developer.mozilla.org/en-US/docs/Archive/Add-ons/Code_snippets/File_I_O#Line_by_line
-    // Open an input stream from file
-    var istream = Components.classes["@mozilla.org/network/file-input-stream;1"].
-                  createInstance(Components.interfaces.nsIFileInputStream);
-    istream.init(dim_file, 0x01, 0444, 0);
-    istream.QueryInterface(Components.interfaces.nsILineInputStream);
+    // https://developer.mozilla.org
+    //     /en-US/docs/Archive/Add-ons/Code_snippets/File_I_O#Line_by_line
+    let inputStream = Cc["@mozilla.org/network/file-input-stream;1"].
+        createInstance(Ci.nsIFileInputStream);
+    inputStream.init(dim_file, 0x01, 0444, 0);
+    inputStream.QueryInterface(Ci.nsILineInputStream);
 
     // Read line by line and look for the image dimensions,
     // which are contained in a line of this general form:
@@ -457,12 +457,13 @@ var tblatex = {
     // are necessarily present. This applies to all versions
     // of dvipng since 2010 (see source, specifically "draw.c").
     let regex = /depth=(\d+) height=(\d+) width=(\d+)/;
-    var line = {}, hasmore;
-    var depth = 0;
+    let line = {};
+    let hasMore;
+    let depth = 0;
     let height = 0;
     let width = 0;
     do {
-      hasmore = istream.readLine(line);
+      hasMore = inputStream.readLine(line);
       let linematch = line.value.match(regex);
       if (linematch) {
         let depthRaw = Number(linematch[1]);
@@ -479,11 +480,9 @@ var tblatex = {
             png_file.path, {replace: logEntryImgFile});
         break;
       }
-    } while(hasmore);
+    } while(hasMore);
 
-    // Close input stream
-    istream.close();
-
+    inputStream.close();
     if (deleteTempFiles) removeFile(dim_file);
 
     if (st == 0) {
