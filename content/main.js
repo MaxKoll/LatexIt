@@ -313,6 +313,7 @@ var tblatex = {
     if (deleteTempFiles) {
       removeFile(auxFile);
       removeFile(logFile);
+      removeFile(texFile);
     }
 
     if (!dviFile.exists()) {
@@ -484,10 +485,6 @@ var tblatex = {
     istream.close();
 
     if (deleteTempFiles) removeFile(dim_file);
-
-    // Only delete the LaTeX file at this point, so that it's left on disk
-    // in case of error.
-    if (deleteTempFiles) removeFile(texFile);
 
     if (st == 0) {
       log.write("Compilation successful.");
