@@ -25,6 +25,9 @@
       "background.js"
     ]
   },
+  "options_ui": {
+    "page": "content/options-new.html"
+  },
   "experiment_apis": {
     "WindowListener": {
       "schema": "api/WindowListener/schema.json",
@@ -50,5 +53,6 @@
         "script": "api/LatexIt/implementation.js"
       }
     }
-  }
+  },
+  "permissions": ["storage"]
 }

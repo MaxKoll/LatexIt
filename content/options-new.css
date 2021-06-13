@@ -1,0 +1,63 @@
+body {
+  background-color: var(--in-content-box-background);
+  color: var(--in-content-page-color);
+  padding: 0 2px 1em 2px;
+  overflow: hidden;
+}
+
+label {
+  display: flex;
+  align-items: center;
+}
+
+.flex {
+  display: flex;
+}
+.flex-grow {
+  flex-grow: 1;
+}
+.hbox.flex {
+  align-items: center;
+}
+.hbox > *:first-child {
+  margin-left: 0;
+}
+.hbox > *:last-child {
+  margin-right: 0;
+}
+.hbox + .hbox {
+  margin-top: 0.5em;
+}
+.hbox + .hbox.larger-gap {
+  margin-top: 1em;
+}
+
+input[type="text"],
+button {
+  height: 2.1em;
+}
+input[type="number"] {
+  height: 2.0em;
+}
+
+input[type="number"] {
+  text-align: right;
+}
+
+button {
+  text-align: center;
+}
+
+h3 {
+  margin-top: 2.3em;
+  margin-bottom: 0.7em;
+  font-size: 1.1em;
+  font-weight: 600;
+}
+h3:first-child {
+  margin-top: 1em;
+}
+
+a {
+  cursor: pointer;
+}

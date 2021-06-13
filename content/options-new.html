@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+
+<html lang="en">
+  <head>
+    <title>LaTeX It!</title>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="chrome://global/skin/global.css" />
+    <link rel="stylesheet" href="chrome://global/skin/in-content/common.css">
+    <link rel="stylesheet" href="chrome://messenger/skin/preferences/preferences.css">
+    <link rel="stylesheet" href="options-new.css">
+  </head>
+
+  <body>
+
+<!--
+    <popupset>
+      <tooltip id="dpi_factor_tooltip">
+        Higher image resolution factor leads to sharper images. Set this to the lowest value that still produces pleasing results. The default value is 2.0.
+        <separator class="thin" />
+        <separator class="thin" />
+        Please be aware that the file size of the inserted images – and therefore the file size of your email – will also increase with higher image resolutions.
+        <separator class="thin" />
+        <separator class="thin" />
+        As a reference, when set to 1.0, and if the display is not scaled, the image resolution matches the native screen resolution exactly. If the display is scaled, which is usually the case for high-resolution screens, the specified font size is smaller than the displayed font size (in relation to the native screen resolution), which leads to blurry images.
+      </tooltip>
+    </popupset>
+-->
+
+    <h3>Executables</h3>
+
+    <div class="hbox">
+      <label for="latex_textbox">Path to latex executable:</label>
+      <div class="hbox flex">
+        <input class="flex-grow" type="text" id="latex_textbox">
+        <button>Browse...</button>
+      </div>
+    </div>
+
+    <div class="hbox">
+      <label for="dvipng_textbox">Path to dvipng executable:</label>
+      <div class="hbox flex">
+        <input class="flex-grow" type="text" id="dvipng_textbox">
+        <button>Browse...</button>
+      </div>
+    </div>
+
+    <div class="hbox larger-gap">
+      <a>Open the autodetection dialog</a>
+    </div>
+
+
+    <h3>Appearance</h3>
+
+    <label class="hbox">
+      <input type="radio" id="autoFontSize_radio" name="fontSize_radio">
+      <span>Use font size of surrounding text</span>
+    </label>
+
+    <div class="hbox flex">
+      <label class="hbox flex" style="display: inline-flex">
+        <input type="radio" id="fixedFontSize_radio" name="fontSize_radio">
+        <span id="fontpx_label">Use fixed font size of</span>
+      </label>
+      <input type="number" id="fontpx_textbox" style="margin-left: 0.7em"
+          class="size3" min="1" max="999" step="1">
+      <span>px</span>
+    </div>
+
+    <label class="hbox larger-gap">
+      <span>Image resolution factor:</span>
+      <input type="number" id="dpi_factor_textbox"  style="margin-left: 0.7em"
+          class="size2" min="1" max="8" step="0.5">
+    </label>
+
+
+    <h3>Debugging</h3>
+
+    <label class="hbox">
+      <input type="checkbox" id="log_checkbox">
+      <span>Generate a log report</span>
+    </label>
+
+    <label class="hbox">
+      <input type="checkbox" id="debug_checkbox">
+      <span>Include debug information in the log report</span>
+    </label>
+
+    <label class="hbox">
+      <input type="checkbox" id="keeptempfiles_checkbox">
+      <span>Keep generated files</span>
+    </label>
+
+
+    <h3>Template</h3>
+
+    <div class="hbox">
+      Template to be used to generate LaTeX document.
+    </div>
+
+    <div class="hbox flex" style="align-items: flex-end">
+      Use __REPLACE_ME__ as a placeholder for your LaTeX expression.
+      <a class="flex-grow" style="text-align: right; margin-left: 1ch">Help?</a>
+    </div>
+
+    <div class="hbox flex">
+      <textarea class="flex-grow" id="template_textbox" rows="12"></textarea>
+    </div>
+
+
+    <script src="options-new.js"></script>
+
+  </body>
+</html>
