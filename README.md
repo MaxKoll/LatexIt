@@ -1,20 +1,24 @@
-Latex It!
-=========
+# Latex It!
 
-Description
------------
+A Thunderbird extension that converts LaTeX to inline images in the message
+composer.
 
-This extension allows you to run LaTeX on your computer to automatically
-generate images for all expression $expr$ found while composing your email. You
-can also render possibly more complex sets of LaTeX, and have them inserted as
-images. You can undo the LaTeX run if the formulae you inserted were wrongly
-typeset, and you can customize the appearance of your formulae.
+## Features
 
-Since everything is run on your own computer, you're in control!
+- Compile all LaTeX expressions `$...$`, `\(...\)` and `\[...\]` found in the
+  email body. The images will be inserted automatically and aligned with the
+  surrounding text.
+- Automatically compile and insert an entire LaTeX document into your email.
+- Undo LaTeX compilation.
+- Customize the appearance of your formulae by editing the document template.
+- Since everything is run on your own computer, you're in control!
 
-Usage
------
+## Build
 
-This extension is provided as a set of files. Please run make to build a working
-xpi. Alternatively, you can create a file named "tblatex@xulforum.org" in your
-extensions/ directory with a single line containing the path to this folder.
+This extension is provided as a set of files. Run make to build a working xpi.
+
+## Known issues
+
+- Undoing LaTeX compilation only succeeds as long as the original DOM node of
+  the inserted image exists.
+- The options panel is not accessible in Thunderbird 91 nightly.
