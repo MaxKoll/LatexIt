@@ -45,7 +45,7 @@ var tblatex = {
    */
   function prepareLatexNodes(rootNode) {
 
-    let regex = /\$\$[^\$]+\$\$|\$[^\$]+\$|\\\[.*?\\\]|\\\(.*?\\\)/g;
+    let regex = /\$.*?\$|\\\(.*?\\\)|\\\[.*?\\\]/g;
 
     const splitNodeIfHasLatex = (node, latexNodes) => {
       let latexExpressions = node.textContent.match(regex) || [];
