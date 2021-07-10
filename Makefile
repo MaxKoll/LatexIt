@@ -1,4 +1,4 @@
-EXCLUDES := tblatex*.xpi Makefile TODO
+EXCLUDES := tblatex*.xpi Makefile
 VERSION := $(shell jq .version manifest.json)
 OUTPUT_FILE := tblatex_v$(VERSION).xpi
 
