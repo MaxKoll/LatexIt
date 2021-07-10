@@ -15,7 +15,10 @@ composer.
 
 ## Build
 
-This extension is provided as a set of files. Run make to build a working xpi.
+Required package: `jq`
+
+Clone the repository or download the code as ZIP file, then run `make` in
+the root directory to build a working XPI.
 
 ## Known issues
 
