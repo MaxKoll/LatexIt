@@ -9,7 +9,7 @@
   "author": "Jonathan Protzenko",
   "name": "LaTeX It!",
   "description": "Convert LaTeX to inline images in the message composer.",
-  "version": "0.8.0-unofficial",
+  "version": "0.8.1-dev-unofficial",
   "homepage_url": "https://github.com/protz/LatexIt/wiki",
   "icons": {
     "16": "skin/icon.svg",
